@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { MAX_PLAYERS, type PokerActionType } from "@facecards/shared";
+import { useTableAudio } from "../audio/useTableAudio.js";
 import { useFaceTracking } from "../avatars/useFaceTracking.js";
 import type { UseMedia } from "../media/useMedia.js";
 import type { RoomSnapshot } from "../net/useRoom.js";
@@ -10,7 +11,8 @@ import { HandHud } from "./HandHud.js";
 import { Kbd } from "./Kbd.js";
 import { SettingsPanel, loadSensitivity } from "./SettingsPanel.js";
 import { VideoTile } from "./VideoTile.js";
-import { useKeybinds } from "./useKeybinds.js";
+import { useChipPush } from "./useChipPush.js";
+import { useHoldKeybind, useKeybinds } from "./useKeybinds.js";
 
 /**
  * The table: a full-bleed 3D room with a thin HUD floating over it.
@@ -50,6 +52,43 @@ export function Table({
   const shareUrl = `${window.location.origin}/?room=${snapshot.code}`;
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sensitivity, setSensitivity] = useState(loadSensitivity);
+  const [peeking, setPeeking] = useState(false);
+
+  // The table's own sound, derived from the difference between one snapshot
+  // and the next. See `audio/cues.ts`: there is no event stream, only state
+  // and state that changed.
+  const audio = useTableAudio(snapshot);
+
+  // Pushing chips towards the pot. Every value it can land on is one the
+  // server published as legal, so a gesture cannot aim at an illegal action;
+  // the intent goes down the same `act()` path the buttons use.
+  const push = useChipPush({
+    snapshot,
+    me,
+    enabled: !settingsOpen,
+    onAct,
+    onDetent: useCallback(
+      () => audio.play("clink", 0, 0.45),
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      [audio.play],
+    ),
+  });
+
+  // Hold to look at your cards. Local and view-only: the server already sent
+  // this client its own two cards, so there is nothing to ask for and nothing
+  // to tell anyone. Two ways in, because both are the same gesture: hold the
+  // key, or press and hold on the cards themselves.
+  const changePeek = useCallback(
+    (next: boolean) => {
+      setPeeking((current) => {
+        if (current === next) return current;
+        audio.play(next ? "deal" : "flip", 0, 0.5);
+        return next;
+      });
+    },
+    [audio],
+  );
+  useHoldKeybind("peek", changePeek, !settingsOpen);
 
   // Find our own face and tell the room where it is, so that the avatar
   // everyone else is looking at frames it properly. Nothing on this screen
@@ -72,13 +111,21 @@ export function Table({
     <main className="room">
       <div className="room__scene">
         <Room3D
-          players={snapshot.players}
+          snapshot={snapshot}
           sessionId={sessionId}
           media={media}
           // The whole point of the Escape menu: the cursor is handed back and
-          // stops dragging the view around with it.
-          lookEnabled={!settingsOpen}
+          // stops dragging the view around with it. Peeking and pushing chips
+          // release it for a different reason - both are gestures made with
+          // the mouse, and a head that swung across the table halfway through
+          // one would make it unusable.
+          lookEnabled={!settingsOpen && !peeking && !push.active}
           sensitivity={sensitivity}
+          peeking={peeking}
+          onPeekChange={changePeek}
+          betPreview={push.preview}
+          canPushChips={!settingsOpen && push.rungCount > 0}
+          onChipGrab={push.begin}
         />
       </div>
 
@@ -97,6 +144,7 @@ export function Table({
             <Kbd bind="settings" /> settings
             <Kbd bind="mute" /> {media.micMuted ? "unmute" : "mute"}
             <Kbd bind="camera" /> camera
+            <Kbd bind="peek" /> hold to peek
           </div>
         </div>
 
@@ -148,13 +196,29 @@ export function Table({
         />
       </div>
 
-      {/* The game itself. Cards, board, pot and stacks read straight off
-          server state; the action bar sends intents back and nothing else.
-          All of it moves onto the table as physical objects in phases 4 and
-          5, at which point this becomes the fallback rather than the game. */}
+      {/* What the game is doing, in words. The cards, the board, the pot and
+          every stack are on the table now, so this is the fallback spec
+          section 8 asks for rather than the game: names, chip counts and the
+          one line that says how the last hand ended. */}
       <div className="hud hud--table">
         <HandHud snapshot={snapshot} me={me} />
       </div>
+
+      {/* The push, while it is happening. The chips in front of your seat are
+          already showing the amount; this says what letting go will do, which
+          is the one thing a pile of chips cannot say for itself. */}
+      {push.active && push.rung && (
+        <div
+          className={`push${push.armed ? " push--armed" : ""}`}
+          role="status"
+          aria-live="polite"
+        >
+          <b>{push.rung.label}</b>
+          <span>
+            {push.armed ? "Let go to commit" : "Keep pushing towards the pot"}
+          </span>
+        </div>
+      )}
 
       <footer className="hud hud--bottom">
         <ActionBar
@@ -180,6 +244,7 @@ export function Table({
           roomCode={snapshot.code}
           shareUrl={shareUrl}
           media={media}
+          audio={audio}
           sensitivity={sensitivity}
           sittingOut={me?.sittingOut ?? false}
           onSitOutChange={onSitOutChange}

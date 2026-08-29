@@ -3,13 +3,20 @@ import type { RoomSnapshot, SeatSnapshot } from "../net/useRoom.js";
 import { CardRow } from "./PlayingCard.js";
 
 /**
- * The board, the pot, the stacks, and your own two cards.
+ * The pot, the stacks, and your own two cards.
  *
- * Phase 2's brief is "minimal HUD, not pretty yet": enough to prove the rules
- * end to end and no more. Everything here moves onto the table itself later -
- * stack counts read better as chips in front of a seat than as a number in a
- * list, and cards belong in your hands - so nothing in this file is worth
- * polishing in place.
+ * Phase 2 built this as the whole game because there was nowhere else to put
+ * it. Phase 4 moved the physical half onto the table - the board is on the
+ * felt, every other seat's cards are face down in front of them, and every
+ * stack is a pile of chips - so what is left here is deliberately only what a
+ * pile of chips cannot say for itself: exact counts, who is on the clock, and
+ * how the last hand ended.
+ *
+ * Two things stay that could have gone. **Your own cards**, because spec
+ * section 8 wants a flat fallback for everything the table does physically,
+ * and because a player should never have to perform a gesture to answer "what
+ * am I holding". And **the numbers**, because a stack you can read to the chip
+ * is a thing chips are bad at and text is good at. Everything else went.
  */
 export function HandHud({
   snapshot,
@@ -24,10 +31,16 @@ export function HandHud({
   return (
     <div className="hand">
       <div className="hand__board">
-        <CardRow cards={snapshot.board} />
+        {/* The board itself is on the felt. What is left is the number a
+            player checks before deciding, which is the pot. */}
         {dealing && (
           <span className="hand__pot">
             Pot <b>{snapshot.pot}</b>
+          </span>
+        )}
+        {me && me.cardCount > 0 && (
+          <span className="hand__mine">
+            <CardRow cards={me.holeCards} count={me.cardCount} />
           </span>
         )}
       </div>
@@ -63,15 +76,9 @@ export function HandHud({
               <span className="hand__stack">{player.stack}</span>
               {player.bet > 0 && <span className="hand__bet">{player.bet}</span>}
 
-              {/* Your own cards come from a private field only your client
-                  receives. Everyone else is a count of face-down backs until
-                  a showdown publishes the real thing. */}
-              <CardRow
-                cards={isMe ? player.holeCards : reveal?.cards}
-                count={player.cardCount}
-                dimmed={player.status === SeatStatus.Folded}
-              />
-
+              {/* A showdown is on the table too, face up in front of the seat
+                  that had to show. What the table cannot draw is what the hand
+                  was called, so that is what stays here. */}
               {reveal && (
                 <span className="hand__reveal">
                   {reveal.description}

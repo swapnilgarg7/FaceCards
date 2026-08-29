@@ -172,9 +172,51 @@ export function betAnchor(seat: Seat): { x: number; y: number; z: number } {
   return anchorFor(seat, TABLE.radius - BET_INSET, 0);
 }
 
-/** The middle. Everything that has been collected lives here. */
-export function potAnchor(): { x: number; y: number; z: number } {
-  return { x: 0, y: TABLE.topY, z: 0 };
+/**
+ * How many piles the collected pot is split across.
+ *
+ * A ring rather than one heap, and on the diagonals so it straddles the board
+ * row without ever sitting on it. Two reasons, and the second is the real one:
+ * a pot pushed in from six directions gathers as several piles at a real
+ * table, and - unlike any single off-centre heap - a ring is the same shape
+ * from every seat, so no arrangement of it makes one player's view better than
+ * another's. Every other position on the felt is derived from a seat; this is
+ * the one thing in the middle, and it must not quietly pick a favourite.
+ */
+export const POT_PILES = 4;
+
+/** Bearing of the world +X axis to the first pot pile: the diagonals. */
+const POT_RADIUS = 0.27;
+
+/** Where the `index`-th pile of the collected pot sits. */
+export function potAnchor(index = 0): {
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+} {
+  const bearing = Math.PI / 4 + (index % POT_PILES) * (Math.PI / 2);
+  return {
+    x: Math.cos(bearing) * POT_RADIUS,
+    y: TABLE.topY,
+    z: Math.sin(bearing) * POT_RADIUS,
+    // Face the pile back at the middle, so its columns spread tangentially
+    // around the ring rather than pointing in at the board.
+    yaw: Math.atan2(Math.cos(bearing), Math.sin(bearing)),
+  };
+}
+
+/**
+ * Split a breakdown across the pot's piles, largest chips first and round
+ * robin, so the piles stay the same height as each other as the pot grows.
+ */
+export function splitAcrossPiles<T>(
+  chips: readonly T[],
+  piles = POT_PILES,
+): T[][] {
+  const out: T[][] = Array.from({ length: piles }, () => []);
+  chips.forEach((chip, i) => out[i % piles]!.push(chip));
+  return out;
 }
 
 /**

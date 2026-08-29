@@ -3,10 +3,12 @@ import { Canvas } from "@react-three/fiber";
 import { ACESFilmicToneMapping } from "three";
 import { Avatar } from "../avatars/Avatar.js";
 import type { UseMedia } from "../media/useMedia.js";
-import type { SeatSnapshot } from "../net/useRoom.js";
+import type { RoomSnapshot } from "../net/useRoom.js";
 import { AttentionDirector, type AttentionPeer } from "./AttentionDirector.js";
+import { ChipField, ChipGrabPad } from "./ChipField.js";
 import { PokerTable } from "./PokerTable.js";
 import { SeatedCamera } from "./SeatedCamera.js";
+import { TableCards } from "./TableCards.js";
 import { assignSeats, seatLayout } from "./layout.js";
 
 /**
@@ -19,13 +21,21 @@ import { assignSeats, seatLayout } from "./layout.js";
  */
 
 export interface Room3DProps {
-  players: SeatSnapshot[];
+  snapshot: RoomSnapshot;
   sessionId: string | null;
   media: UseMedia;
   /** False while an overlay owns the cursor, so the view stops following it. */
   lookEnabled: boolean;
   /** 0..1 look sensitivity, from the settings panel. */
   sensitivity: number;
+  /** The local player is holding their own cards up to look at them. */
+  peeking: boolean;
+  onPeekChange(peeking: boolean): void;
+  /** Chips the local player is mid-way through pushing in, or null. */
+  betPreview: { seat: number; chipsForward: number } | null;
+  /** True when a chip push is a legal thing to start right now. */
+  canPushChips: boolean;
+  onChipGrab(clientY: number): void;
 }
 
 function Lighting() {
@@ -56,12 +66,19 @@ function Lighting() {
 }
 
 export function Room3D({
-  players,
+  snapshot,
   sessionId,
   media,
   lookEnabled,
   sensitivity,
+  peeking,
+  onPeekChange,
+  betPreview,
+  canPushChips,
+  onChipGrab,
 }: Room3DProps) {
+  const players = snapshot.players;
+
   // Placement follows who is actually here, so two players sit opposite
   // rather than taking the first two slots of a table built for six.
   const placed = useMemo(
@@ -77,6 +94,7 @@ export function Room3D({
     seatLayout(1)[0]!;
 
   const others = players.filter((player) => player.sessionId !== sessionId);
+  const mySeatRing = mySeatIndex === undefined ? undefined : placed.get(mySeatIndex);
 
   // Where every other head is, for the quality director. Derived from the same
   // placement the avatars use, so what it upgrades is what you are looking at.
@@ -104,6 +122,26 @@ export function Room3D({
 
       <Lighting />
       <PokerTable />
+
+      {/* Phase 4: the game as objects. Cards on the felt you can pick up and
+          peek at, and every chip in the room in one instanced mesh. Both read
+          server state and neither owns any of it. */}
+      <TableCards
+        snapshot={snapshot}
+        placed={placed}
+        sessionId={sessionId}
+        peeking={peeking}
+        onPeekChange={onPeekChange}
+      />
+      <ChipField snapshot={snapshot} placed={placed} preview={betPreview} />
+      {mySeatRing && (
+        <ChipGrabPad
+          seat={mySeatRing}
+          enabled={canPushChips}
+          onGrab={(event) => onChipGrab(event.clientY)}
+        />
+      )}
+
       <SeatedCamera
         seat={mySeat}
         lookEnabled={lookEnabled}

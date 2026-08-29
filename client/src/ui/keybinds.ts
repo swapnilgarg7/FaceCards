@@ -20,6 +20,7 @@
 export const RESERVED_KEYS = ["w", "a", "s", "d"] as const;
 
 export type KeybindId =
+  | "peek"
   | "fold"
   | "checkCall"
   | "raise"
@@ -43,13 +44,29 @@ export interface Keybind {
   shift?: boolean;
   /** What the shortcut does, in the words the UI uses for it. */
   label: string;
+  /**
+   * The action lasts as long as the key is down.
+   *
+   * A held binding is not wired through `useKeybinds`, which fires on keydown
+   * and knows nothing about letting go. It goes through `useHoldKeybind`
+   * instead. The flag lives here so the settings panel can say "hold" rather
+   * than "press", and so nothing can bind a hold key twice by accident.
+   */
+  hold?: boolean;
 }
 
 /**
- * Ordered as the settings panel lists them: the four things you do on your
- * turn, then the ways to size a raise, then the room controls.
+ * Ordered as the settings panel lists them: looking at your hand, the four
+ * things you do on your turn, then the ways to size a raise, then the room
+ * controls.
  */
 export const KEYBINDS: readonly Keybind[] = [
+  {
+    id: "peek",
+    key: " ",
+    hold: true,
+    label: "Hold to look at your cards",
+  },
   { id: "fold", key: "f", label: "Fold" },
   { id: "checkCall", key: "c", label: "Check or call" },
   { id: "raise", key: "r", label: "Bet or raise to the amount shown" },

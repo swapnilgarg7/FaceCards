@@ -70,6 +70,17 @@ export function arc(from: Vec3, to: Vec3, lift: number, t: number): Vec3 {
   };
 }
 
+/**
+ * Milliseconds between two cards of a deal, and between two cards of a flop.
+ *
+ * They live here rather than in the component that animates them because the
+ * *sound* has to land with the card. `audio/cues.ts` schedules a deal click per
+ * card off these same two numbers, and a card that arrives 90ms after its own
+ * click is worse than no click at all.
+ */
+export const DEAL_STEP_MS = 92;
+export const FLOP_STEP_MS = 115;
+
 /** One card's place in the deal: which seat, which of its cards, and when. */
 export interface DealStep {
   /** Index into the ring returned by `seatLayout`. */

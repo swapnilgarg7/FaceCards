@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { KEYBINDS, RESERVED_KEYS, keyLabel } from "./keybinds.js";
+import type { UseTableAudio } from "../audio/useTableAudio.js";
 import type { UseMedia } from "../media/useMedia.js";
 import { DEFAULT_SENSITIVITY } from "../scene/lookCurve.js";
 
@@ -46,6 +47,8 @@ export interface SettingsPanelProps {
   roomCode: string;
   shareUrl: string;
   media: UseMedia;
+  /** Table sound: chips, cards and the room bed. Never the voices. */
+  audio: UseTableAudio;
   sensitivity: number;
   /** Dealt out of the next hand. Server-owned; this is what it says. */
   sittingOut: boolean;
@@ -59,6 +62,7 @@ export function SettingsPanel({
   roomCode,
   shareUrl,
   media,
+  audio,
   sensitivity,
   sittingOut,
   onSitOutChange,
@@ -119,6 +123,33 @@ export function SettingsPanel({
         </section>
 
         <section className="settings__section">
+          <h3>Table sound</h3>
+          <div className="settings__row">
+            <button className="btn" onClick={() => audio.setMuted(!audio.muted)}>
+              {audio.muted ? "Unmute table sound" : "Mute table sound"}
+            </button>
+          </div>
+          <label className="settings__slider">
+            <span>Volume</span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={audio.volume}
+              disabled={audio.muted}
+              onChange={(event) =>
+                audio.setVolume(Number.parseFloat(event.target.value))
+              }
+            />
+          </label>
+          <p className="note">
+            Cards, chips and the room underneath them. Separate from everyone's
+            voices, which have their own path and are never turned down by this.
+          </p>
+        </section>
+
+        <section className="settings__section">
           <h3>Look</h3>
           <label className="settings__slider">
             <span>Sensitivity</span>
@@ -150,7 +181,10 @@ export function SettingsPanel({
                 <dt>
                   <kbd className="kbd">{keyLabel(bind.id)}</kbd>
                 </dt>
-                <dd>{bind.label}</dd>
+                <dd>
+                  {bind.label}
+                  {bind.hold && <span className="settings__hold">hold</span>}
+                </dd>
               </div>
             ))}
           </dl>

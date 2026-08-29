@@ -753,3 +753,66 @@ h2 {
   opacity: 0.45;
   border-left-color: var(--error);
 }
+
+/* ---------------------------------------------------------------------------
+   Phase 4: the physical table.
+
+   Almost all of phase 4 is in the scene rather than in here, which is the
+   point of it. What is left in the DOM is the readout that says what a
+   gesture is about to do, and it is deliberately quiet: the chips in front of
+   the seat are already showing the amount.
+   ------------------------------------------------------------------------- */
+
+/* Your own two cards, beside the pot. The board is on the felt now. */
+.hand__mine {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+
+/* What letting go of a chip push will do. Centred low, over the felt, near
+   where the chips themselves are - not up with the room controls. */
+.push {
+  position: absolute;
+  left: 50%;
+  bottom: 7.5rem;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.5rem 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  background: rgba(20, 23, 29, 0.82);
+  pointer-events: none;
+  text-align: center;
+}
+.push b {
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+}
+.push span {
+  font-size: 0.78rem;
+  color: var(--dim);
+}
+/* Far enough along that letting go commits. The border is the whole signal:
+   anything louder would be a thing to read at the exact moment the player is
+   looking at their own chips. */
+.push--armed {
+  border-color: var(--accent);
+}
+.push--armed b {
+  color: var(--accent);
+}
+
+/* A binding you hold rather than press. */
+.settings__hold {
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.35rem;
+  border: 1px solid var(--line);
+  border-radius: 0.3rem;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+}
