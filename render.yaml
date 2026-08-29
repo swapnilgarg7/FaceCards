@@ -1,0 +1,41 @@
+# Render Blueprint for the authoritative game server.
+#
+# The client is not here on purpose: plan.md puts it on Cloudflare Pages, and
+# a static site does not belong in the same failure domain as the process that
+# owns the deck. See docs/DEPLOYMENT.md.
+services:
+  - type: web
+    name: facecards-server
+    runtime: node
+    plan: free
+    # Closest region to Delhi. WebRTC media does not flow through here (that is
+    # LiveKit's job), but every bet and deal does, so pick for player latency.
+    region: singapore
+    branch: main
+    healthCheckPath: /api/health
+
+    # `--include=dev` is load-bearing. Render sets NODE_ENV=production, which
+    # makes a bare `npm ci` skip devDependencies, and `tsx` - the thing that
+    # actually runs the server - is one of them.
+    buildCommand: npm ci --include=dev
+    startCommand: npm start -w @facecards/server
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      # Set in the dashboard, never in this file: it is committed.
+      #
+      # CORS_ORIGINS  comma-separated browser origins allowed to reach the API
+      #               and the WebSocket, e.g. https://facecards.pages.dev
+      # LIVEKIT_*     from LiveKit Cloud -> Settings -> Keys
+      #
+      # PORT is injected by Render and read by server/src/config.ts. Do not set it.
+      - key: CORS_ORIGINS
+        sync: false
+      - key: LIVEKIT_URL
+        sync: false
+      - key: LIVEKIT_API_KEY
+        sync: false
+      - key: LIVEKIT_API_SECRET
+        sync: false
