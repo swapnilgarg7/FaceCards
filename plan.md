@@ -175,8 +175,12 @@ This is the product thesis. Build it before poker.
 
 ---
 
-### Phase 2: Poker prototype
+### Phase 2: Poker prototype — DONE
 **Spec definition of done:** two players can complete a full Hold'em hand.
+
+Verified by 207 unit tests, `npm run typecheck`, and `npm run verify:phase2`
+(25 checks against a live server), plus `poker-auditor` and `netcode-security`.
+See `README.md` for the checklist and the boundaries left open.
 
 Rules correctness, headless first.
 
@@ -195,11 +199,29 @@ Rules correctness, headless first.
 - Tests cover: heads-up blind and button inversion, all-in short blind, min-raise rules, an under-raise all-in that does **not** reopen betting, a three-way multi-all-in side pot, split pots, odd-chip assignment.
 - Devtools inspection of every frame on the wire shows **no opponent hole card anywhere**.
 
+**What the audits caught**
+
+`poker-auditor` and `netcode-security` both found real defects. Recording them because each one is a trap the next phase can walk back into:
+
+- **`refundUncalled` paid an uncalled bet back to a *folded* seat.** Reachable only through `forfeit()`, so only when someone left mid-hand - which `onLeave` does on every unclean drop. Directly exploitable: three-bet big, pull the plug, and reclaim the wager if the pot ended up uncontested. The invariant everyone reaches for did not catch it, because `totalCommitted` was decremented in lockstep with the refund: chips stayed conserved and the pots still summed. The assertion that does catch it is *a folded seat's contribution never shrinks*, and the fuzz now asserts it over 4,000 hands with random leavers.
+- **A sub-minimum all-in *opening bet* shut out a player who had only checked.** The reopening rule is about raises. An opening bet has no level anyone committed to, so there is nothing to reopen, and a check has never forfeited the right to raise once someone bets. `hasActed` was conflating "acted since the last full raise" with "acted at all this round".
+- **Seat indices are not identities.** A player leaving mid-hand freed their seat index while the engine still held their `HandSeat`, so the next joiner could inherit their stack, their status, and their showdown attribution. Fixed on both sides: a seat the live hand still holds is not free, and `mirror.ts` matches `playerId` to `sessionId` before writing anything.
+- **`create` and `joinOrCreate` were exposed over Colyseus matchmaking.** `POST /matchmake/create/poker` with `{"code":"ABCDEF"}` stood up a room on any code the caller chose - the exact squatting attack the `/api/rooms` two-step exists to prevent, through a door the verify script never knocked on. It only ever tested `join`. Both the door and the check are fixed.
+- **An intent had no way to say which decision it was answering.** A double-click, or a resend arriving a street late, was indistinguishable from a fresh action. `PokerState.turn` is now an opaque token the client echoes back.
+
+**What the build corrected**
+- **`poker-evaluator` was dropped for a hand-rolled evaluator.** The package is 130 MB unpacked and `readFileSync`s the whole Two-Plus-Two table at import time, which is an I/O import inside `server/src/poker/` and therefore against this project's own rule, and ~130 MB resident on a 512 MB free tier. Its O(1) win is real and irrelevant at ~126 evaluations per showdown. Full reasoning in `docs/TECH-DECISIONS.md`.
+- **The reopening rule is one flag, not a special case.** A full raise clears `hasActed` on every other active seat; an under-raise all-in does not. Players who have not acted keep their full rights, players who have may only call or fold, and the next full raise is still measured off the last real one. Encoding it any other way needs three interacting fields.
+- **What you owe is capped by what an opponent can pay.** `amountToCall` measures against the deepest live opponent rather than the raw `currentBet`, which makes a big blind all-in for less than the blind fall out for free instead of needing its own branch. It pairs with an uncalled-bet refund at the close of every round, which is also what stops pot construction ever seeing a level only one player reached.
+- **Private state ended up as two viewed scalars, not a viewed array.** `holeCard0` / `holeCard1` reuse exactly the `{ type: "string", view: true }` shape phase 0 verified end to end. Hold'em deals two cards, so the shape costs nothing and the audit surface is identical to the one already proven.
+- **A showdown is a publication, not a widened view.** Cards become public through a `Reveal` the server writes after the hand is decided, and only for a hand that actually reached a showdown. A hand won on folds reveals nothing.
+
 **Traps**
 - Heads-up reverses button and blind order versus three-handed and up. Both need tests.
 - An all-in for less than a full raise does not reopen action for players who already acted at that level.
 - Never send the remaining deck stub or the RNG seed to anyone, in any form, including "for animation."
 - Each `StateView` costs an extra encoding pass per client. It is purpose-built for this and worth it, but it is not free. Keep private fields minimal.
+- A hand can be over before anyone acts. Two players all-in on the blinds runs the board out inside `startHand`, so the room has to be ready to mirror a finished hand straight out of the deal.
 
 ---
 

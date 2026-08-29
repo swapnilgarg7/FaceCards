@@ -19,7 +19,7 @@ Researched 2026-08-29 against live docs and registries. Versions are what was cu
 | Networking | Colyseus 0.17.10, `@colyseus/schema` 4.0.30, client `@colyseus/sdk` 0.17.43 |
 | TypeScript | 5.9.3, deliberately not 7.x |
 | Private state | `StateView` (`@filter()` is removed) |
-| Hand evaluation | `poker-evaluator` |
+| Hand evaluation | hand-rolled, pure (`poker-evaluator` reversed in phase 2, see below) |
 | Betting logic | hand-rolled, pure, exhaustively tested |
 | Shuffle | `crypto.randomInt` + Fisher-Yates, server only |
 | Client hosting | Cloudflare Pages |
@@ -322,16 +322,37 @@ the bottleneck.
 
 ## Poker engine
 
-### Hand evaluation: `poker-evaluator`
+### Hand evaluation: hand-rolled
+
+**Reversed in phase 2.** The original pick was `poker-evaluator`, on the strength of its
+Two-Plus-Two lookup tables and O(1) evaluation. Building against it surfaced two
+disqualifying facts that the package comparison below did not capture:
+
+- **It is 130 MB unpacked, and `readFileSync`s all of it at import time.** That is an I/O
+  import inside `server/src/poker/`, which `CLAUDE.md` forbids outright, and it is not a
+  restriction that can be worked around: the table *is* the package. It also puts ~130 MB
+  resident on Render's 512 MB free tier and lands squarely on the cold-start path that
+  section already warns about.
+- **The O(1) advantage buys nothing at this workload.** A six-way showdown is 21
+  five-card combinations per player, about 126 evaluations, a few times a minute. The
+  exhaustive-subset evaluator in `server/src/poker/evaluate.ts` runs that in microseconds.
+  O(1) matters for a solver running millions of evaluations; it does not matter for a
+  poker night.
+
+What replaced it is ~200 lines packing a category and five kicker ranks into one
+comparable integer, covered by category, tie-break, seven-card and description tests. The
+same reasoning that keeps the betting logic in-house applies here: chip accounting and
+who-wins are the two things worth being able to read end to end when someone disputes a
+pot.
+
+The alternatives, for the record, in case the constraint ever changes:
 
 | Package | License | Status | Note |
 | --- | --- | --- | --- |
-| **`poker-evaluator`** | ISC | published 2025-08-18, maintained | Two-Plus-Two lookup tables, O(1). `poker-evaluator-ts` is a TS port; `@types/poker-evaluator` exists. **Pick this.** |
-| `@xpressit/winning-poker-hand-rank` | MIT | published ~1 month ago | Native TypeScript, Hold'em/Omaha/short-deck. Reasonable alternative. |
+| `poker-evaluator` | ISC | published 2025-08-18, maintained | Two-Plus-Two lookup tables, O(1). 130 MB, `readFileSync` at import. Rejected on the I/O rule and the memory footprint, not on correctness. |
+| `@xpressit/winning-poker-hand-rank` | MIT | recent | Native TypeScript, Hold'em/Omaha/short-deck. The best fallback if hand-rolling is ever regretted. |
 | `pokersolver` | MIT | v2.1.4, 2022 | Most tutorial-cited, 4 years stale. |
 | `phe` | MIT | v0.6.0 | Fast, no first-party TS types. |
-
-O(1) evaluation matters more than it looks: a multi-way side pot forces repeated evaluation at showdown.
 
 ### Betting logic: hand-rolled
 

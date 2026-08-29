@@ -36,3 +36,22 @@ export const ROOM_EMPTY_GRACE_MS = 60_000;
 /** Default local dev ports. Overridable by env on both ends. */
 export const DEFAULT_SERVER_PORT = 2567;
 export const DEFAULT_CLIENT_PORT = 5173;
+
+/** Chips every player is staked when they sit down. Fake chips, always. */
+export const STARTING_STACK = 1000;
+
+/** Table stakes. Fixed for V1; no blind levels, no tournament structure. */
+export const SMALL_BLIND = 5;
+export const BIG_BLIND = 10;
+
+/**
+ * How long the result of a hand stays on screen before the next deal.
+ *
+ * Long enough to read a showdown and say something about it, which is the
+ * whole product. The spec's exit criterion is that the next hand starts with
+ * no lobby round-trip, not that it starts instantly.
+ */
+export const PAYOUT_DISPLAY_MS = 6_000;
+
+/** Pause before dealing once a table first has enough players with chips. */
+export const HAND_START_DELAY_MS = 2_000;

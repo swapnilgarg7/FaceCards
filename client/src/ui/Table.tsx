@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
-import { MAX_PLAYERS } from "@facecards/shared";
+import { MAX_PLAYERS, type PokerActionType } from "@facecards/shared";
 import { useFaceTracking } from "../avatars/useFaceTracking.js";
 import type { UseMedia } from "../media/useMedia.js";
 import type { RoomSnapshot } from "../net/useRoom.js";
 import { Room3D } from "../scene/Room3D.js";
+import { ActionBar } from "./ActionBar.js";
 import { FaceDebug } from "./FaceDebug.js";
+import { HandHud } from "./HandHud.js";
 import { SettingsPanel, loadSensitivity } from "./SettingsPanel.js";
 import { VideoTile } from "./VideoTile.js";
 
@@ -21,15 +23,18 @@ export function Table({
   snapshot,
   sessionId,
   media,
-  onBump,
+  rejection,
+  onAct,
   onLeave,
 }: {
   snapshot: RoomSnapshot;
   sessionId: string | null;
   media: UseMedia;
-  onBump(): void;
+  rejection: string | null;
+  onAct(turn: number, type: PokerActionType, amount?: number): void;
   onLeave(): void;
 }) {
+  const me = snapshot.players.find((p) => p.sessionId === sessionId);
   const shareUrl = `${window.location.origin}/?room=${snapshot.code}`;
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sensitivity, setSensitivity] = useState(loadSensitivity);
@@ -113,17 +118,21 @@ export function Table({
         />
       </div>
 
-      {/* Phase-0 plumbing proof, kept until real poker state replaces it in
-          phase 2. It is the cheapest possible check that server state still
-          reaches both tabs. */}
+      {/* The game itself. Cards, board, pot and stacks read straight off
+          server state; the action bar sends intents back and nothing else.
+          All of it moves onto the table as physical objects in phases 4 and
+          5, at which point this becomes the fallback rather than the game. */}
+      <div className="hud hud--table">
+        <HandHud snapshot={snapshot} me={me} />
+      </div>
+
       <footer className="hud hud--bottom">
-        <button className="btn btn--ghost" onClick={onBump}>
-          Bump
-        </button>
-        <span className="hud__meta">
-          {snapshot.counter}
-          {snapshot.lastBumpBy && ` · ${snapshot.lastBumpBy}`}
-        </span>
+        <ActionBar
+          snapshot={snapshot}
+          me={me}
+          rejection={rejection}
+          onAct={onAct}
+        />
       </footer>
 
       {/* Dev only. `import.meta.env.DEV` is substituted with `false` at build

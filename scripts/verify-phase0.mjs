@@ -23,6 +23,8 @@ import {
   ROOM_NAME,
   ClientMessage,
   ServerMessage,
+  STARTING_STACK,
+  TablePhase,
 } from "@facecards/shared";
 
 const HTTP = process.env.VERIFY_HTTP_URL ?? "http://localhost:2567";
@@ -36,6 +38,15 @@ const check = (name, pass, detail = "") => {
   );
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/** Poll until `predicate` holds, or give up so a failure reads as a failure. */
+const waitFor = async (predicate, timeoutMs) => {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return true;
+    await sleep(100);
+  }
+  return false;
+};
 const section = (title) => console.log(`\n${title}`);
 
 // ---------------------------------------------------------------- room codes
@@ -69,7 +80,30 @@ try {
 } catch {
   /* expected */
 }
-check("a client cannot create a room by picking its own code", !squatted);
+check("joining an unminted code does not conjure a room", !squatted);
+
+// The check above is not sufficient on its own, and for a while it was the
+// only one here. Colyseus exposes `create` and `joinOrCreate` over
+// `POST /matchmake/:method/:room` by default, both of which reach
+// `PokerRoom.onCreate` with caller-supplied options - so a client could pick
+// its own code through a door `join` never opened. Test the door directly.
+for (const method of ["create", "joinOrCreate"]) {
+  const response = await fetch(`${HTTP}/matchmake/${method}/${ROOM_NAME}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code: "ZZZZZZ" }),
+  });
+  const body = await response.json().catch(() => ({}));
+  check(
+    `a client cannot mint its own room code via matchmake/${method}`,
+    !body?.sessionId,
+    body?.error ?? body?.code ?? `http ${response.status}`,
+  );
+}
+check(
+  "and no room appeared on the squatted code",
+  (await fetch(`${HTTP}/api/rooms/ZZZZZZ`)).status === 404,
+);
 
 // ------------------------------------------------------------- two "tabs"
 
@@ -101,28 +135,57 @@ check(
 
 section("Shared state flows to both");
 
-alice.send(ClientMessage.Bump);
-await sleep(250);
-bob.send(ClientMessage.Bump);
-await sleep(500);
+// Two seated players is a table, so the server deals. Waiting for that is
+// also the cheapest proof that server-owned state reaches both tabs: neither
+// client asked for a hand, and both are now looking at the same one.
+await waitFor(
+  () =>
+    alice.state.phase !== TablePhase.Waiting &&
+    bob.state.phase !== TablePhase.Waiting,
+  8000,
+);
 
 check(
-  "the shared value updates in both tabs",
-  alice.state.counter === 2 && bob.state.counter === 2,
-  `alice=${alice.state.counter} bob=${bob.state.counter}`,
+  "the server starts a hand on its own",
+  alice.state.handNumber === 1 && bob.state.handNumber === 1,
+  `alice=${alice.state.handNumber} bob=${bob.state.handNumber}`,
 );
 check(
-  "the server attributes the action",
-  alice.state.lastBumpBy === "Bob" && bob.state.lastBumpBy === "Bob",
+  "both tabs see the same public state",
+  alice.state.pot === bob.state.pot &&
+    alice.state.actingSeat === bob.state.actingSeat,
+  `pot=${alice.state.pot} acting=${alice.state.actingSeat}`,
+);
+
+const aliceMe = alice.state.players.get(alice.sessionId);
+const bobMe = bob.state.players.get(bob.sessionId);
+check(
+  "the server staked both players",
+  aliceMe.stack + aliceMe.bet === STARTING_STACK &&
+    bobMe.stack + bobMe.bet === STARTING_STACK,
+  `${aliceMe.stack}+${aliceMe.bet}`,
 );
 
 // The standing rule, asserted rather than assumed: intents, never outcomes.
-alice.send(ClientMessage.Bump, { counter: 9999, amount: 1000 });
-await sleep(400);
+const rejections = [];
+alice.onMessage(ServerMessage.ActionRejected, (p) => rejections.push(p.reason));
+bob.onMessage(ServerMessage.ActionRejected, (p) => rejections.push(p.reason));
+
+const idle = alice.state.actingSeat === aliceMe.seat ? bob : alice;
+const potBefore = alice.state.pot;
+// A payload that names a seat, an amount larger than the stack, and a result.
+// Every field of it is either ignored or refused.
+idle.send(ClientMessage.Action, {
+  type: "raise",
+  amount: 999999,
+  seat: 0,
+  turn: alice.state.turn,
+});
+await sleep(500);
 check(
-  "a client-supplied payload cannot set the value",
-  alice.state.counter === 3,
-  `counter=${alice.state.counter}`,
+  "a client cannot act out of turn or name its own amount",
+  alice.state.pot === potBefore && rejections.length > 0,
+  rejections[0] ?? "no rejection sent",
 );
 
 // ------------------------------------------------------------- privacy
@@ -131,22 +194,31 @@ section("Private state is genuinely absent, not merely unrendered");
 
 const aliceJson = JSON.stringify(alice.state);
 const bobJson = JSON.stringify(bob.state);
-const aliceSeat = alice.state.players.get(alice.sessionId).seat;
-const bobSeat = bob.state.players.get(bob.sessionId).seat;
 
 check(
-  "each client receives its own private field",
-  Boolean(alice.state.players.get(alice.sessionId).privateNote) &&
-    Boolean(bob.state.players.get(bob.sessionId).privateNote),
+  "each client receives its own two cards",
+  Boolean(aliceMe.holeCard0 && aliceMe.holeCard1) &&
+    Boolean(bobMe.holeCard0 && bobMe.holeCard1),
+  `${aliceMe.holeCard0}${aliceMe.holeCard1} / ${bobMe.holeCard0}${bobMe.holeCard1}`,
 );
 check(
-  "the other player's private field is not in the payload",
-  !aliceJson.includes(`seat ${bobSeat} private`) &&
-    !bobJson.includes(`seat ${aliceSeat} private`),
+  "the other player's cards are not in the payload",
+  !aliceJson.includes(`"${bobMe.holeCard0}"`) &&
+    !aliceJson.includes(`"${bobMe.holeCard1}"`) &&
+    !bobJson.includes(`"${aliceMe.holeCard0}"`) &&
+    !bobJson.includes(`"${aliceMe.holeCard1}"`),
 );
 check(
   "the private key itself is absent from the other player's entry",
-  !bobJson.includes(`"seat":${aliceSeat},"connected":true,"privateNote"`),
+  !bobJson.includes(`"sessionId":"${alice.sessionId}","displayName":"Alice","seat":${aliceMe.seat},"connected":true,"stack":${aliceMe.stack},"bet":${aliceMe.bet},"status":"${aliceMe.status}","cardCount":2,"holeCard0"`),
+);
+check(
+  "everyone can still see that the other seat is holding cards",
+  alice.state.players.get(bob.sessionId).cardCount === 2,
+);
+check(
+  "the undealt deck and the burn cards are nowhere on the wire",
+  !aliceJson.includes('"deck"') && !aliceJson.includes('"burned"'),
 );
 console.log(`        Alice sees: ${aliceJson}`);
 console.log(`        Bob sees:   ${bobJson}`);
@@ -246,7 +318,7 @@ check("leaving frees the seat", alice.state.players.size === 1);
 const bobAgain = await seat("Bob");
 await sleep(500);
 check("rejoining by code returns to the same room", bobAgain.roomId === alice.roomId);
-check("state survives the rejoin", bobAgain.state.counter === 3);
+check("state survives the rejoin", bobAgain.state.code === code);
 
 // The phase-0 exit criterion: refreshing the last open tab must not wedge the
 // server or evaporate the room before the reload lands.

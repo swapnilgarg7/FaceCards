@@ -403,38 +403,158 @@ h2 {
   color: var(--error);
 }
 
-.panel {
-  padding: 1rem;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel);
+/* The action bar sits along the bottom, clear of the self-view tile on the
+   right. The hand readout hugs the left edge so it never crosses the middle
+   of the screen, which is where the faces are. */
+.hud--table {
+  top: 4.2rem;
+  left: 1.1rem;
+  bottom: 6rem;
+  align-items: flex-start;
 }
-.counter {
-  margin: 0 0 0.6rem;
-  font-size: 3rem;
-  font-variant-numeric: tabular-nums;
-  color: var(--accent);
+.hud--bottom {
+  bottom: 0.9rem;
+  left: 1.1rem;
+  right: 13.5rem;
 }
 
-.seats {
+.hand {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  max-width: 24rem;
+}
+.hand__board {
+  display: flex;
+  gap: 0.7rem;
+  align-items: center;
+  min-height: 2.4rem;
+}
+.hand__pot {
+  color: var(--dim);
+  font-size: 0.85rem;
+}
+.hand__pot b {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.hand__seats {
   margin: 0;
   padding: 0;
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 0.35rem;
+  font-size: 0.85rem;
 }
-.seats li {
+.hand__seat {
   display: flex;
-  gap: 0.6rem;
-  align-items: baseline;
+  gap: 0.5rem;
+  align-items: center;
   flex-wrap: wrap;
+  padding: 0.25rem 0.5rem;
+  border-left: 2px solid transparent;
+  border-radius: 4px;
+  background: rgba(20, 23, 29, 0.55);
+}
+/* Whose turn it is has to be readable at a glance from across the table. */
+.hand__seat--acting {
+  border-left-color: var(--accent);
+  background: rgba(212, 175, 55, 0.12);
+}
+.hand__seat--folded {
+  opacity: 0.5;
+}
+.hand__name {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+  min-width: 7rem;
+}
+.hand__button {
+  display: inline-grid;
+  place-items: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 50%;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+.hand__stack {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.hand__bet {
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+.hand__bet::before {
+  content: "bet ";
+}
+.hand__reveal,
+.hand__tag {
+  color: var(--dim);
+  font-size: 0.75rem;
+}
+.hand__reveal b {
+  color: var(--accent);
 }
 
-.private {
-  color: var(--dim);
-  font-size: 0.8rem;
-  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+/* Cards are flat DOM until phase 4 makes them objects you can pick up. */
+.cardrow {
+  display: inline-flex;
+  gap: 0.2rem;
+}
+.card {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.05rem;
+  min-width: 1.9rem;
+  height: 2.4rem;
+  padding: 0 0.25rem;
+  border-radius: 4px;
+  background: #f4f1e8;
+  color: #14171d;
+  font-size: 0.85rem;
+  line-height: 1;
+}
+.card--red {
+  color: #b3241f;
+}
+.card--back {
+  background: repeating-linear-gradient(
+    45deg,
+    #2c3a5a,
+    #2c3a5a 3px,
+    #22304c 3px,
+    #22304c 6px
+  );
+}
+.card--dim {
+  opacity: 0.45;
+}
+
+.actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.actions--idle {
+  min-height: 2.2rem;
+}
+.actions__raise {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.actions__slider {
+  width: 10rem;
+  accent-color: var(--accent);
 }
 
 .note {

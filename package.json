@@ -20,7 +20,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -b --pretty tsconfig.json",
-    "verify:phase0": "tsx scripts/verify-phase0.mjs"
+    "verify:phase0": "tsx scripts/verify-phase0.mjs",
+    "verify:phase2": "tsx scripts/verify-phase2.mjs"
   },
   "devDependencies": {
     "@colyseus/sdk": "0.17.43",

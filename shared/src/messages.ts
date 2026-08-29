@@ -3,15 +3,21 @@
  * here, and both ends import these types. Change the type first, then both
  * ends.
  *
- * Rule that outlives phase 0: client messages are *intents*, never outcomes.
- * The client asks to bump the counter; it does not tell the server what the
- * counter now is.
+ * Rule that outlives every phase: client messages are *intents*, never
+ * outcomes. A client asks to raise to an amount; it does not tell the server
+ * what the pot now is, who won, or what its stack became. The server owns the
+ * deck, the turn order, the legality of every bet, the pot maths and the
+ * winner, and it re-derives all of them from its own state.
  */
 
 /** Messages the client sends to the server. */
 export const ClientMessage = {
-  /** Phase-0 plumbing proof: "please increment the shared counter." */
-  Bump: "bump",
+  /** "I want to fold / check / call / raise." Payload: `PokerActionIntent`. */
+  Action: "action",
+  /** "Deal me out of the next hand." */
+  SitOut: "sit-out",
+  /** "Deal me back in." */
+  SitIn: "sit-in",
   /** Ask the server to re-issue a media token, e.g. after a token expiry. */
   RequestMediaToken: "request-media-token",
 } as const;
@@ -26,10 +32,56 @@ export const ServerMessage = {
    * client's session identity. Sent once on join, and again on request.
    */
   MediaToken: "media-token",
+  /**
+   * "That action was not legal, and here is why." Sent only to the client that
+   * tried it. Carries no state: the authoritative state is already on its way
+   * through the normal patch, so this is a message for a human, not a
+   * correction the client applies.
+   */
+  ActionRejected: "action-rejected",
 } as const;
 
 export type ServerMessageType =
   (typeof ServerMessage)[keyof typeof ServerMessage];
+
+/** The four things a player can do on their turn. */
+export const PokerAction = {
+  Fold: "fold",
+  Check: "check",
+  Call: "call",
+  Raise: "raise",
+} as const;
+
+export type PokerActionType = (typeof PokerAction)[keyof typeof PokerAction];
+
+/**
+ * A player's intent for their turn.
+ *
+ * `amount` is the *total* this seat will have committed for the round, not the
+ * increment, which is what a poker UI shows and what removes the "raise by or
+ * raise to" ambiguity. It is a request: the server checks it against the
+ * min-raise, the stack and the turn order, and rejects anything else. Nothing
+ * about a call or a check is carried, because the server already knows what
+ * those cost.
+ */
+export interface PokerActionIntent {
+  type: PokerActionType;
+  amount?: number;
+  /**
+   * The `PokerState.turn` the player was looking at when they chose this.
+   *
+   * Copied back verbatim, never invented. It is what makes an intent an answer
+   * to a specific question rather than a standing instruction: the server
+   * refuses it if the table has moved on since, so a double-click or a resend
+   * that arrives a street late cannot act for you a second time.
+   */
+  turn: number;
+}
+
+/** Body of `ServerMessage.ActionRejected`. */
+export interface ActionRejectedPayload {
+  reason: string;
+}
 
 /** Options a client passes when joining a room. */
 export interface JoinOptions {

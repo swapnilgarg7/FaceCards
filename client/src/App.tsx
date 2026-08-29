@@ -53,7 +53,8 @@ export default function App() {
         snapshot={room.snapshot}
         sessionId={room.sessionId}
         media={media}
-        onBump={room.bump}
+        rejection={room.rejection}
+        onAct={room.act}
         onLeave={leave}
       />
     );

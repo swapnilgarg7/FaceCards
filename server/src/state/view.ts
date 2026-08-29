@@ -12,8 +12,10 @@ import type { PlayerInstance } from "@facecards/shared";
  * was built on: another client's payload does not contain the field at all,
  * rather than containing it and trusting the client not to render it.
  *
- * When phase 2 adds `holeCards`, it goes through exactly this function and no
- * other path. One place to audit is the entire point.
+ * `holeCard0` and `holeCard1` ride on this and on nothing else. There is one
+ * function in the codebase that decides who can see a card, and this is it.
+ * The only other way a card becomes public is a `Reveal` written at a real
+ * showdown, which is a deliberate publication rather than a view.
  */
 export function grantOwnPlayerView(
   client: Client,

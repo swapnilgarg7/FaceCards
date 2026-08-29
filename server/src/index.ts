@@ -36,6 +36,26 @@ const gameServer = new Server({
  */
 gameServer.define(ROOM_NAME, PokerRoom).filterBy(["code"]);
 
+/**
+ * Take `create` and `joinOrCreate` off the matchmaking API.
+ *
+ * Colyseus exposes `joinOrCreate`, `create`, `join`, `joinById` and `reconnect`
+ * over `POST /matchmake/:method/:room` by default, with no auth and with CORS
+ * headers it sets itself. `create` reaches `PokerRoom.onCreate` with whatever
+ * options the caller sends, so anyone could `POST /matchmake/create/poker`
+ * with `{"code":"ABCDEF"}` and stand up a room on a code they chose - which is
+ * precisely the squatting attack the `/api/rooms` two-step exists to prevent.
+ * The two-step was decorative until this line: nothing obliged a client to use
+ * it.
+ *
+ * What survives is what the product needs. `join` matches an existing room by
+ * code and never creates one, `joinById` and `reconnect` are what phase 3's
+ * `allowReconnection()` needs, and the only way a room comes into existence is
+ * `matchMaker.createRoom` below, called by this server with a code it drew
+ * itself.
+ */
+matchMaker.controller.exposedMethods = ["join", "joinById", "reconnect"];
+
 /** Is a room with this code currently live? */
 async function roomExists(code: string): Promise<boolean> {
   const rooms = await matchMaker.query({ name: ROOM_NAME });
