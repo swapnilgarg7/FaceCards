@@ -87,6 +87,14 @@ function track(player) {
   return player;
 }
 
+/** Reconnect a client that was dropped, keeping it in `seats` in place. */
+async function reconnectAs(player, token) {
+  const room = await new Client(WS).reconnect(token);
+  const back = track({ name: player.name, room, seen: [], rejections: [] });
+  seats[seats.indexOf(player)] = back;
+  return back;
+}
+
 async function seat(name, avatar) {
   const room = await new Client(WS).join(ROOM_NAME, {
     code,
@@ -193,8 +201,41 @@ check(
 );
 check(
   "the server publishes a clock for the seat on the clock",
-  state().actingMs === TURN_TIMEOUT_MS,
+  state().actingMs > 0 && state().actingMs <= TURN_TIMEOUT_MS,
+  `${state().actingMs}ms of ${TURN_TIMEOUT_MS}`,
+);
+
+// ------------------------------------------------- the clock is not a toy
+
+section("The action clock cannot be restarted by someone who is not on it");
+
+// The regression guard for a real defect: re-arming a fresh budget on every
+// connection change let *any* player at the table hand the acting seat another
+// thirty seconds by cycling their socket, without ever being in the hand.
+const actingBefore = state().actingSeat;
+const bystander = seats.find((p) => seatOf(p) !== actingBefore);
+const bystanderToken = bystander.room.reconnectionToken;
+const clockBefore = state().actingMs;
+
+await bystander.room.leave(false);
+await sleep(500);
+await reconnectAs(bystander, bystanderToken);
+await sleep(500);
+
+check(
+  "a player who is not on the clock cannot add time to it",
+  state().actingMs < clockBefore,
+  `${clockBefore}ms -> ${state().actingMs}ms`,
+);
+check(
+  "and the clock never exceeds the budget the decision started with",
+  state().actingMs <= TURN_TIMEOUT_MS,
   `${state().actingMs}ms`,
+);
+check(
+  "and the seat on the clock did not change",
+  state().actingSeat === actingBefore,
+  `${actingBefore} -> ${state().actingSeat}`,
 );
 
 // Captured now, while they are unambiguously *this* hand's cards.
@@ -231,8 +272,8 @@ check("their stack is still on the table", stillSeated?.stack === droppedStack);
 check("the table can see they are gone", stillSeated?.connected === false);
 check(
   "the clock drops to the budget for an empty chair",
-  state().actingMs === DISCONNECTED_TURN_TIMEOUT_MS,
-  `${state().actingMs}ms`,
+  state().actingMs > 0 && state().actingMs <= DISCONNECTED_TURN_TIMEOUT_MS,
+  `${state().actingMs}ms of ${DISCONNECTED_TURN_TIMEOUT_MS}`,
 );
 
 const movedOn = await waitFor(
@@ -252,14 +293,8 @@ check(
 
 section("They reopen the laptop");
 
-const backRoom = await new Client(WS).reconnect(reconnectionToken);
-const back = track({
-  name: dropped.name,
-  room: backRoom,
-  seen: [],
-  rejections: [],
-});
-seats[seats.indexOf(dropped)] = back;
+const back = await reconnectAs(dropped, reconnectionToken);
+const backRoom = back.room;
 await sleep(600);
 
 check(

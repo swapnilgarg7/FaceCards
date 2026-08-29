@@ -108,6 +108,23 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
    * seat already acted is answering a question nobody is still asking.
    */
   private turnToken = 0;
+  /**
+   * When the decision currently on the clock was put there.
+   *
+   * The clock is a *deadline* derived from this, not a countdown restarted by
+   * whatever last happened. Re-arming a fresh budget on every connection
+   * change - which is what this used to do - meant any player at the table
+   * could hand the acting seat another thirty seconds by dropping and
+   * reconnecting on a loop, without ever being in the hand. The whole point of
+   * the clock is that it cannot be stopped by someone who is not there.
+   */
+  private turnStartedAt = 0;
+  /**
+   * sessionId -> when they dropped, for players inside their reconnection
+   * window. Combined with `turnStartedAt`, this is what lets the deadline be
+   * computed from state rather than accumulated from events.
+   */
+  private readonly disconnectedSince = new Map<string, number>();
   private buttonSeat = NO_SEAT;
 
   override onCreate(options: { code?: unknown }): void {
@@ -137,7 +154,10 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
 
     this.onMessage(ClientMessage.SitOut, (client) => {
       const player = this.state.players.get(client.sessionId);
-      if (!player) return;
+      // Unchanged is a no-op. `sittingOut` is a public field, so writing it
+      // unconditionally would turn one inbound byte into a patch fanned out to
+      // every client at the table, as fast as a client cared to send it.
+      if (!player || player.sittingOut) return;
       player.sittingOut = true;
       // Sitting out never yanks a player out of the hand they are already in;
       // it takes effect at the next deal. Leaving mid-hand is a fold, and
@@ -146,7 +166,7 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
 
     this.onMessage(ClientMessage.SitIn, (client) => {
       const player = this.state.players.get(client.sessionId);
-      if (!player) return;
+      if (!player || !player.sittingOut) return;
       player.sittingOut = false;
       this.considerDealing();
     });
@@ -215,6 +235,9 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
     if (!player) return;
 
     player.connected = false;
+    // Remembered rather than acted on: `turnDeadline` reads it, so the clock
+    // shortens without any event being allowed to restart it.
+    this.disconnectedSince.set(client.sessionId, Date.now());
     console.log(
       `[room ${this.state.code}] ~ ${player.displayName} dropped (${code}),` +
         ` holding seat ${player.seat} for ${RECONNECT_GRACE_MS / 1000}s`,
@@ -233,9 +256,14 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
   /** They came back inside the window. Seat, stack and own cards intact. */
   override onReconnect(client: Client): void {
     const player = this.state.players.get(client.sessionId);
-    if (!player) return;
+    // Thrown, not returned. A client with no `Player` would otherwise stay
+    // joined, holding the previous client's `StateView` and occupying a seat
+    // slot with nothing behind it. Colyseus turns this into a clean
+    // `FAILED_TO_RECONNECT` leave.
+    if (!player) throw new Error("no seat to reconnect to");
 
     player.connected = true;
+    this.disconnectedSince.delete(client.sessionId);
     // Re-granted rather than relied upon. Colyseus does carry the previous
     // client's view across a reconnection, but who may see a card is a
     // decision this codebase makes in exactly one function, and a reconnecting
@@ -268,6 +296,7 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
 
       this.takenSeats.delete(player.seat);
       this.state.players.delete(client.sessionId);
+      this.disconnectedSince.delete(client.sessionId);
 
       console.log(
         `[room ${this.state.code}] - ${player.displayName} left (${code})`,
@@ -275,7 +304,7 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
     }
 
     if (this.hand) {
-      this.turnToken += 1;
+      this.bumpTurn();
       this.syncHand();
     }
     this.scheduleDisposeIfEmpty();
@@ -367,7 +396,7 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
 
     if (!outcome.ok) return outcome;
 
-    this.turnToken += 1;
+    this.bumpTurn();
     this.syncHand();
     return { ok: true };
   }
@@ -378,30 +407,60 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
 
   // ------------------------------------------------------- the action clock
 
-  /**
-   * How long this seat gets to answer.
-   *
-   * Two budgets, one rule: time is for thinking, and a chair with nobody in it
-   * is not thinking. A dropped player keeps the seat, the stack and the cards
-   * for the whole reconnection window; what they stop keeping is the table's
-   * patience.
-   */
-  private turnBudgetMs(seat: number): number {
-    for (const player of this.state.players.values()) {
-      if (player.seat !== seat) continue;
-      return player.connected ? TURN_TIMEOUT_MS : DISCONNECTED_TURN_TIMEOUT_MS;
-    }
-    // A seat the engine still holds but the room no longer does: the player
-    // left and their `HandSeat` outlived them. Nobody is coming.
-    return DISCONNECTED_TURN_TIMEOUT_MS;
+  /** A new decision is on the clock. The one place the countdown restarts. */
+  private bumpTurn(): void {
+    this.turnToken += 1;
+    this.turnStartedAt = Date.now();
   }
 
   /**
-   * (Re)start the clock for whoever is on it, and publish how long they have.
+   * When this seat runs out of time, as an absolute moment.
    *
-   * Called after every action and every connection change, so the budget is
-   * always the one that matches the seat's current state rather than the one
-   * it had when the street opened.
+   * A deadline computed from state, never a budget accumulated from events,
+   * and that distinction is the whole security property. It is a pure function
+   * of three things - when the decision started, whether the acting player is
+   * connected, and when they dropped - so **no sequence of connects and
+   * disconnects, by anyone at the table, can push it past
+   * `turnStartedAt + TURN_TIMEOUT_MS`.** Restarting a full budget on each
+   * connection change instead let any player, in the hand or not, buy the
+   * acting seat another thirty seconds by cycling their socket.
+   *
+   * Two budgets, one rule underneath: time is for thinking, and a chair with
+   * nobody in it is not thinking. A dropped player keeps the seat, the stack
+   * and the cards for the whole reconnection window; what they stop keeping is
+   * the table's patience. Coming back inside their original thirty seconds
+   * gives them the rest of it, and nothing more.
+   */
+  private turnDeadline(seat: number): number {
+    const full = this.turnStartedAt + TURN_TIMEOUT_MS;
+
+    let player: PlayerInstance | undefined;
+    this.state.players.forEach((p) => {
+      if (p.seat === seat) player = p;
+    });
+    // A seat the engine still holds but the room no longer does: the player
+    // left and their `HandSeat` outlived them. Nobody is coming.
+    if (!player) {
+      return Math.min(full, this.turnStartedAt + DISCONNECTED_TURN_TIMEOUT_MS);
+    }
+    if (player.connected) return full;
+
+    // Measured from the later of the drop and the start of the decision, so a
+    // player who was already away when their turn came round still gets the
+    // short budget rather than a deadline that has already passed.
+    const since = this.disconnectedSince.get(player.sessionId) ?? this.turnStartedAt;
+    return Math.min(
+      full,
+      Math.max(since, this.turnStartedAt) + DISCONNECTED_TURN_TIMEOUT_MS,
+    );
+  }
+
+  /**
+   * (Re)arm the clock for whoever is on it, and publish how long is left.
+   *
+   * Called after every action and every connection change. The deadline is
+   * recomputed rather than restarted, so a connection change can only ever
+   * shorten it back towards the ceiling the decision started with.
    */
   private armTurnClock(): void {
     if (this.turnTimer) {
@@ -416,8 +475,8 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
       return;
     }
 
-    const budget = this.turnBudgetMs(seat);
-    this.state.actingMs = budget;
+    const remaining = Math.max(0, this.turnDeadline(seat) - Date.now());
+    this.state.actingMs = remaining;
 
     // The token is the decision this timeout answers. If anything moves the
     // hand on before it fires - an action, a leaver, a re-arm - the timeout
@@ -426,7 +485,7 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
     this.turnTimer = setTimeout(() => {
       this.turnTimer = undefined;
       this.actOnTimeout(token, seat);
-    }, budget);
+    }, remaining);
   }
 
   /**
@@ -454,13 +513,34 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
     );
 
     const outcome = this.commit(hand, seat, action);
-    if (!outcome.ok) {
-      // The clock cannot be the thing that wedges a table. If the engine
-      // refused both the free check and the fold, something is wrong that
-      // folding will not fix, so say so loudly rather than spinning on it.
+    if (outcome.ok) return;
+
+    // The clock is not allowed to be the thing that wedges a table, and
+    // logging on the way out is not a recovery: nothing re-arms the timer, so
+    // a refused timeout used to leave the hand frozen on a seat nobody was
+    // going to answer for. `forfeit` is the abandonment path the room already
+    // uses for a leaver - it folds the seat and, if the seat was holding the
+    // clock, moves it on - and it is safe to call at any moment.
+    console.error(
+      `[room ${this.state.code}] timeout action refused: ${outcome.reason}`,
+    );
+    forfeit(hand, seat);
+    this.bumpTurn();
+    this.syncHand();
+
+    if (this.hand?.actingSeat === seat) {
+      // Unreachable: the engine only ever puts an active seat on the clock,
+      // and forfeiting an active seat always settles. If it happens anyway,
+      // stop rather than re-arm, because re-arming here is an infinite loop
+      // that logs an error every few seconds forever.
       console.error(
-        `[room ${this.state.code}] timeout action refused: ${outcome.reason}`,
+        `[room ${this.state.code}] seat ${seat} would not release the clock; leaving it disarmed`,
       );
+      if (this.turnTimer) {
+        clearTimeout(this.turnTimer);
+        this.turnTimer = undefined;
+      }
+      this.state.actingMs = 0;
     }
   }
 
@@ -558,7 +638,7 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
 
     clearHand(this.state, bySeat);
     clearResult(this.state);
-    this.turnToken += 1;
+    this.bumpTurn();
 
     this.hand = startHand({
       players: eligible.map((p) => ({

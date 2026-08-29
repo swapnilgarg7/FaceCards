@@ -169,16 +169,20 @@ export const PokerState = schema(
     /** Seat on the clock, or -1. */
     actingSeat: "int8",
     /**
-     * How long the seat on the clock has to decide, in milliseconds, or 0 when
+     * How long the seat on the clock has *left*, in milliseconds, or 0 when
      * nobody is on the clock.
      *
-     * A *duration*, not a deadline, and deliberately so: an absolute server
-     * timestamp would need the two clocks to agree, and they do not. The
-     * client starts its countdown when `turn` changes, which is the moment it
-     * learned about this decision, so the worst case is that its bar is a
-     * network hop behind rather than wrong by whatever the machine's clock
-     * drifted to. The bar is a picture of the server's clock; the server's
-     * clock is the one that acts.
+     * A remaining duration, not an absolute deadline, and deliberately so: a
+     * server timestamp would need the two machines' clocks to agree, and they
+     * do not. The client restarts its countdown whenever this value changes,
+     * so the worst case is that its bar runs a network hop behind rather than
+     * being wrong by whatever the local clock has drifted to.
+     *
+     * The server recomputes it from the moment the decision was put on the
+     * clock, so it only ever falls. That is what stops a player cycling their
+     * connection to buy the acting seat more time - see `turnDeadline` in
+     * `server/src/rooms/PokerRoom.ts`. The bar is a picture of the server's
+     * clock; the server's clock is the one that acts.
      */
     actingMs: "uint32",
     /**

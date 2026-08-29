@@ -7,11 +7,13 @@ import { useEffect, useRef } from "react";
  * what happens when time runs out and does it whether or not this bar has
  * finished draining; nothing here can act, and nothing here is consulted.
  *
- * It counts down from the moment `turn` changed, which is when this client
- * learned about the decision, rather than from a server timestamp - see the
- * note on `PokerState.actingMs`. The cost is that the bar lags by one network
- * hop; the alternative costs a clock-sync protocol to be wrong by however far
- * two machines' clocks have drifted.
+ * It counts down `actingMs` from the moment that value arrived, rather than
+ * towards a server timestamp - see the note on `PokerState.actingMs`. The
+ * server publishes what is *left*, recomputed on every re-arm, so the bar
+ * re-syncs downwards whenever the server revises the deadline and can never be
+ * talked into showing more time than the seat has. The cost is that it lags by
+ * one network hop; the alternative costs a clock-sync protocol to be wrong by
+ * however far two machines have drifted.
  *
  * Driven by `requestAnimationFrame` writing to a transform, not by state:
  * sixty React renders a second, over a HUD that sits on top of a 3D scene, is
@@ -27,7 +29,7 @@ export function TurnClock({
 }: {
   /** The decision being timed. A change restarts the countdown. */
   turn: number;
-  /** Total budget for it, in milliseconds. Zero means nobody is on the clock. */
+  /** Time left on it, in milliseconds. Zero means nobody is on the clock. */
   actingMs: number;
   /** Whose clock it is, which is the difference between urgent and ambient. */
   mine: boolean;
