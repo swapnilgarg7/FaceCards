@@ -154,13 +154,35 @@ export function nextBlinds(
       ? smallBlindPos
       : null;
 
-  // The button follows the small blind position round, empty chair or not.
+  // The button follows the small blind position round, empty chair or not -
+  // *provided* the position it lands on is still the one immediately before
+  // the small blind on this hand's ring.
+  //
+  // That proviso is the whole rule, and checking a weaker version of it is a
+  // real bug rather than a theoretical one. It is tempting to only guard
+  // against the button colliding with a blind, but the case that actually
+  // bites is a seat being dealt in *between* the carried button and the small
+  // blind: the button is then left two or more seats behind, and since
+  // `openRound` walks the ring from the button, postflop action opens on the
+  // stranded seat every street. They act first all hand and the seat on their
+  // right gets last action it never paid for. `splitPot` reads the button too,
+  // so the odd chip goes one chair early as well. Preflop order is derived
+  // from the big blind rather than the button, so none of this shows up in a
+  // fold-heavy hand - which is exactly why it needs an assertion rather than
+  // an eyeball.
+  //
+  // Reachable two ways: the waiter fallback above, and any seat that is dealt
+  // back in mid-rotation without waiting for the blind.
   let button = previous.smallBlindPos;
-  if (button === bigBlindSeat || button === smallBlindPos) {
-    // Only reachable when the roster churned enough that the carried position
-    // collapsed onto one of this hand's blinds, which would open the postflop
-    // action in the wrong place. Step back to the seat before the small blind
-    // instead, which is where the button belongs by construction.
+  // With a dead small blind the first live seat clockwise of the button is the
+  // big blind instead; the position it is measured against is the same either
+  // way.
+  const leftOfButton = smallBlindSeat ?? bigBlindSeat;
+  if (firstAfter(dealt, button) !== leftOfButton) {
+    // Put it back where it belongs: the last dealt seat before the small blind
+    // position. Note this is only reached when the carried position is wrong,
+    // so a legitimate dead button - one with no dealt seat between it and the
+    // small blind - is left exactly where it is.
     button = firstBefore(dealt, smallBlindPos) ?? button;
   }
 

@@ -13,6 +13,16 @@ import type { HeadPiece } from "./archetypes.js";
  * respect it; this file is what would break it, so it only ever draws above
  * `headTopY` or behind the head.
  */
+/**
+ * Which parts of an accessory cast a shadow: the mass, and nothing else.
+ *
+ * A hat brim throws a shadow you can read across a table. Its band, an antenna
+ * bulb and a cape clasp do not - they are a few millimetres of trim inside a
+ * silhouette something else already casts, and each one is another submission
+ * to the depth pass for six avatars, every frame. `scene-perf` counted the
+ * accessory meshes at roughly a third of the shadow pass for no visible
+ * return.
+ */
 export function HeadPieceMesh({
   piece,
   headTopY,
@@ -46,7 +56,8 @@ export function HeadPieceMesh({
             />
             <meshStandardMaterial color={colour} roughness={0.8} />
           </mesh>
-          {/* Band, in the accent colour, so the hat is not one flat mass. */}
+          {/* Band, in the accent colour, so the hat is not one flat mass.
+              Inside the crown's own shadow, so it casts none of its own. */}
           <mesh position={[0, brimY + 0.022, 0]}>
             <cylinderGeometry
               args={[piece.crownRadius * 1.06, piece.crownRadius * 1.06, 0.026, 18]}
@@ -73,6 +84,8 @@ export function HeadPieceMesh({
       return (
         <group>
           {[-1, 1].map((side) => (
+            // Stalks and bulbs: millimetres of trim above a skull that is
+            // already casting. Neither casts.
             <group key={side} position={[side * piece.spread, headTopY - 0.02, 0]}>
               <mesh rotation-z={side * -0.28} position={[0, piece.length / 2, 0]}>
                 <cylinderGeometry args={[0.008, 0.01, piece.length, 8]} />

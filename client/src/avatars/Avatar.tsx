@@ -431,7 +431,6 @@ export function Avatar({
                 // direction this player faces, which is where a tie hangs.
                 <mesh
                   position={[0, body.shoulderY - 0.15, body.chestFrontZ * 0.94]}
-                  castShadow
                 >
                   <boxGeometry args={[0.038, 0.17, 0.02]} />
                   <meshStandardMaterial

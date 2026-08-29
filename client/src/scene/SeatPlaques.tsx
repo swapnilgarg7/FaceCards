@@ -1,11 +1,16 @@
-import { useMemo, useRef } from "react";
+import { useLayoutEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { SeatStatus } from "@facecards/shared";
 import type { RoomSnapshot, SeatSnapshot } from "../net/useRoom.js";
 import { damp, dampAngle } from "./damp.js";
 import { TABLE, type Seat } from "./layout.js";
-import { dealerButtonTexture, stackPlaque, type PlaqueTone } from "./plaques.js";
+import {
+  PLAQUE_ASPECT,
+  SeatPlaque,
+  dealerButtonTexture,
+  type PlaqueTone,
+} from "./plaques.js";
 import { RAIL_CROWN_R, RAIL_INNER, railSurfaceAt } from "./tableProfile.js";
 
 /**
@@ -97,12 +102,25 @@ function RailPlaque({
   player: SeatSnapshot;
   acting: boolean;
 }) {
-  const tone = plaqueTone(player, acting);
+  // One canvas per seat, for the life of that seat, repainted when its number
+  // changes. See `plaques.ts` for why this is not a cache: a stack changes on
+  // every action, so a cache keyed on the number would grow a texture per
+  // distinct chip count for the length of an evening.
+  const plaque = useMemo(() => new SeatPlaque(), []);
+  useLayoutEffect(() => {
+    plaque.attach();
+    return () => plaque.detach();
+  }, [plaque]);
+
+  // Painted in a layout effect rather than in the render body: this runs
+  // before the browser paints and before R3F's next frame, so there is never a
+  // frame showing the previous number, and the render itself stays free of
+  // side effects.
   const caption = plaqueCaption(player);
-  const plaque = useMemo(
-    () => stackPlaque(player.stack, caption, tone),
-    [player.stack, caption, tone],
-  );
+  const tone = plaqueTone(player, acting);
+  useLayoutEffect(() => {
+    plaque.draw(player.stack, caption, tone);
+  }, [plaque, player.stack, caption, tone]);
 
   // The plaque follows its seat the way the avatar does: the ring re-flows as
   // people join and leave, and a number that teleported while its owner slid
@@ -140,7 +158,7 @@ function RailPlaque({
         position={[0, PLAQUE_Y, PLAQUE_RADIUS]}
         rotation={[RAIL_SLOPE, Math.PI, 0]}
       >
-        <planeGeometry args={[PLAQUE_HEIGHT * plaque.aspect, PLAQUE_HEIGHT]} />
+        <planeGeometry args={[PLAQUE_HEIGHT * PLAQUE_ASPECT, PLAQUE_HEIGHT]} />
         <meshBasicMaterial
           map={plaque.texture}
           transparent

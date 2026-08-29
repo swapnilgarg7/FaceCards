@@ -57,6 +57,7 @@ Deploying to LiveKit Cloud and Render: `docs/DEPLOYMENT.md`.
 | `npm run verify:phase2` | Plays a full hand against a running stack |
 | `npm run verify:phase3` | Six clients, a drop, a reconnect, and a sit-out |
 | `npm run verify:phase4` | Sound assets, then a hand replayed through the drawing layer |
+| `npm run verify:phase5` | Geometry, fixtures, idles and font assets. Needs nothing running |
 | `npm run build` | Production client bundle |
 | `npm run livekit:up` / `:down` / `:logs` | Local SFU |
 
@@ -81,6 +82,15 @@ rung of the chip-push ladder has to be legal by that same patch's own flags,
 and no client may ever be able to resolve an opponent's card to a face. It is
 what caught the odd chip a split pot leaves behind, which no hand-written
 fixture had.
+
+`npm run verify:phase5` is the one that needs **nothing running at all**, which
+is deliberate: it is the check most likely to be wanted in a hurry, in the
+middle of moving something two centimetres. It replays every card and chip
+anchor the scene draws to, at every seat count, against the rail's inner radius
+so the decoration can never creep in over the game; asserts that no fixture in
+the room glows inside the band of height a face occupies; sweeps two hours of
+every archetype's idle against its amplitude ceilings; and checks the shipped
+fonts against `docs/ASSET-CREDITS.md` and `styles.css` in both directions.
 
 `npm run verify:phase3` needs only `npm run dev`, and takes about a minute.
 It also carries the regression guard for the clock: a player who is *not* on
@@ -344,6 +354,86 @@ Known boundaries left to later phases, on purpose:
 - Chip piles cap at 24 chips, so a stack past a few thousand is drawn in 500s
   and eventually truncates. The number beside it is always exact.
 
-Next: **phase 5, visual polish** — the dressed table, baked lighting, the RevK
-card atlas, the Quaternius avatar bodies, and UI in funky premium casino
-styling. See `plan.md`.
+Next: **phase 5, visual polish.**
+
+
+## Phase 5 status
+
+Verified by unit tests, `npm run typecheck`, `npm run build` and
+`npm run verify:phase5` (23 checks), plus `scene-perf`.
+
+Unlike the earlier verify scripts, `verify:phase5` needs **nothing running** —
+every check is a pure function replayed against the real geometry, or a file on
+disk. That is deliberate: it is the check most likely to be run in a hurry, in
+the middle of moving something two centimetres.
+
+- [x] **The table is a turned object.** A rail, an apron and a pedestal, each
+      a lathed cross-section authored in `tableProfile.ts` as numbers; brass
+      inlay between cloth and leather; a neon race tucked under the rail lip.
+      3,528 triangles against a 15k budget
+- [x] **The felt is one 1024px disc, not a tiled swatch** — which is what lets
+      the betting line be drawn at a world radius the layout agrees with, so
+      chips genuinely cross it when they are pushed forward
+- [x] **There is a room.** A round shell: carpet, velvet above panelling with a
+      brass cap, eight pilasters, a pendant over the table, and three races of
+      light. Everything in it is a ring, for the same reason the seating is —
+      anything that is not rotationally symmetric quietly gives one seat a
+      better view than the others
+- [x] **Six people sitting still are six different people.** Every archetype
+      now has an idle (`idle.ts`) and an outfit (`Outfit.tsx`): the cowboy
+      leans back in a yoke, the businessman cannot sit still, the gentleman is
+      carved out of wood, the wizard is somewhere else in a cape, the alien
+      scans the room, the shark barely moves
+- [x] **Stack counts are on the table.** Each seat's chip count is engraved on
+      the inner slope of the rail in front of it, which from every other seat
+      is directly under that person's face — read in the same glance. The
+      dealer button is a disc on the felt that slides to the next seat between
+      hands
+- [x] **Real cards.** The atlas now draws the standard English pip patterns,
+      inverted below the midline as a real card is, with framed devices for the
+      courts and one large pip for the ace
+- [x] **Chips have a face and an edge.** One texture, one material, one draw
+      call: the cylinder's own UVs are squeezed so the caps sample the face
+      design and the rim samples the edge spots
+- [x] **UI in casino styling.** Two OFL faces, self-hosted: Cinzel Decorative
+      where something should read as engraved, Bebas Neue for every chip count
+      in the product. Brass on oxblood glass over a warm ground, matching the
+      room underneath rather than sitting on top of it as a separate
+      application
+- [x] **Faces and cards are still the two most legible things on screen**, and
+      that is now a check rather than an intention: no fixture in the room
+      glows inside the band of height a face occupies, and no background
+      element varies by more than 6%
+
+Two rules the phase turned into assertions, because both are the kind of thing
+a later art pass breaks silently:
+
+- **The decoration never reaches the game.** Every card and chip anchor, at
+  every seat count, replayed against the rail's inner radius. The binding
+  constraint turned out not to be the hole cards but the *deck*, which sits
+  further out and is where every card of every hand begins. 22mm of margin
+  at the worst case
+- **An idle never takes a face with it.** Every archetype swept for two hours
+  of session time against the amplitude ceilings in `idle.ts`. Worst glance
+  6.9 degrees, which foreshortens a face plane by 0.7%
+
+Known boundaries left to later phases, on purpose:
+
+- **No quality tiers yet.** One set of textures and one light rig for every
+  machine. Spec section 12 wants a quality setting with automatic fallback for
+  weak GPUs, and that is a phase-6 job alongside the browser matrix
+- **The room is deliberately small.** 3.6m radius, no doors, nothing to walk
+  to. `plan.md` says the table is the hero asset and not to build an
+  explorable casino, and the shell exists only so the table is standing
+  somewhere rather than floating in fog
+- **Chip edge spots are a brighter shade of the chip's own colour**, not the
+  white of a real casino chip. The instance colour multiplies through a grey
+  map; true white spots would need a per-instance UV attribute and a shader
+  patch, which is a lot of fragility for a detail on a two-centimetre object
+- **The court cards are devices, not figures.** A framed panel with a rank and
+  a suit rather than an engraving with a face. What the card has to do is read
+  as a king from two metres away at an angle, and a crude figure does that
+  worse than a clear device
+
+Next: **phase 6, reliability** — permission flows, the browser matrix, quality
+tiers, network edge cases and a full protocol re-audit. See `plan.md`.

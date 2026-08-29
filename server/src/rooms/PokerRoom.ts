@@ -355,6 +355,13 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
       this.state.players.delete(client.sessionId);
       this.disconnectedSince.delete(client.sessionId);
       this.timeoutStrikes.delete(client.sessionId);
+      // A showdown row outlives the hand it belongs to by the length of the
+      // payout screen, and it is keyed by seat because a departed seat has no
+      // session id left to key it by. Freeing the seat in that window would
+      // hand the row to whoever sits down next, who would be shown holding
+      // someone else's hand and credited with someone else's pot. The row goes
+      // with the player.
+      this.dropRevealFor(player.seat);
 
       console.log(
         `[room ${this.state.code}] - ${player.displayName} left (${code})`,
@@ -524,6 +531,20 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
 
   private reject(client: Client, reason: string): void {
     client.send(ServerMessage.ActionRejected, { reason });
+  }
+
+  /**
+   * Withdraw one seat's published showdown.
+   *
+   * Rebuilt rather than spliced: `ArraySchema` indices are what the encoder
+   * diffs against, and removing from the middle of one in place is the kind of
+   * thing that works until the day it does not.
+   */
+  private dropRevealFor(seat: number): void {
+    const keep = [...this.state.reveals].filter((r) => r.seat !== seat);
+    if (keep.length === this.state.reveals.length) return;
+    this.state.reveals.clear();
+    for (const reveal of keep) this.state.reveals.push(reveal);
   }
 
   // ------------------------------------------------------- the action clock
@@ -868,6 +889,14 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
     // but an exception escaping a timer callback would take the process with
     // it and leave six people looking at a frozen table. The blinds do not
     // move, the hand number is given back, and the room returns to waiting.
+    //
+    // Deliberately *not* rescheduled. Because the blinds correctly do not
+    // advance, a retry would recompute the identical arrangement and throw
+    // again, forever, a few seconds apart. The next thing a player does -
+    // sitting in, buying in, joining - runs `considerDealing()` and tries
+    // again with a roster that has actually changed. Unreachable today:
+    // `applyPendingBuyIns()` runs before `eligiblePlayers()`, so every dealt
+    // seat has chips and none of `startHand`'s three checks can fire.
     let hand: HandState;
     try {
       hand = startHand({
@@ -917,12 +946,20 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
     // two deals waits for nothing, and a seat that sat five hands out cannot
     // step back in one place past the blinds.
     //
-    // A dropped player is spared, deliberately. Their seat, stack and cards are
-    // all being held for them on the grounds that they are still at this table,
-    // and charging them for the hands they could not see would contradict that
-    // for the sake of an exploit nobody runs on their friends.
+    // **No exemption for a dropped player**, and that is a deliberate reversal.
+    // Sparing them read as generosity - their seat, stack and cards are all
+    // held for them, so why charge them a blind? - but a non-consented drop is
+    // one `ws.close()` away, `state.bigBlindSeat` says exactly when the blind
+    // is due, and the reconnection window is a minute long. That is the "step
+    // in past the blinds, fold round, step out again" behaviour this rule
+    // exists to stop, arriving through the reconnection door. Whether a blind
+    // went past your empty chair is not a question about your connection.
+    //
+    // What a dropped player keeps is everything that matters: the seat, the
+    // chips, the cards and a minute to come back. What they pay is the same
+    // thing anyone else pays for missing hands, which is a wait for the blind.
     this.state.players.forEach((player) => {
-      if (seated.has(player.seat) || !player.connected) return;
+      if (seated.has(player.seat)) return;
       player.owesBlind = true;
     });
 

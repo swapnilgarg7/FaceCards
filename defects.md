@@ -1,47 +1,144 @@
-Defects
-1. HIGH — the action clock is client-resettable; any client can stall the table indefinitely
-server/src/rooms/PokerRoom.ts:224 (onDrop), :251 (onReconnect), :406-430 (armTurnClock)
+# Defects
 
-armTurnClock() unconditionally clears the pending timer and starts a new one for the full budget, with no accounting of elapsed time. It re-arms for hand.actingSeat — whoever that is, not the player whose connection changed. Two consequences:
+Audited against the tree as it stands. Items 1 and 2 of the previous list are
+**fixed** and have been moved to the bottom rather than deleted, because the
+shape of the fix is the part worth keeping.
 
-The acting player drops at 29 of 30 seconds (ws.close() from devtools is a non-consented drop), gets 5s, reconnects, gets a fresh 30s. Repeatable forever.
-Worse: any other player at the table can drop/reconnect on a loop and hand the acting seat a fresh 30 seconds every cycle, without ever being in the hand.
-This is also a plain correctness bug in normal use: one player's wifi hiccup restarts the acting player's countdown, and the client bar follows it (client/src/ui/TurnClock.tsx re-runs its effect on [turn, actingMs]). It defeats the phase-3 exit criterion that a closed laptop cannot stall the table.
+---
 
-Fix: record turnStartedAt = Date.now() at every point turnToken is bumped (:370, :561, :278) and in armTurnClock compute remaining = Math.max(0, budget - (Date.now() - turnStartedAt)), publishing state.actingMs = remaining. On drop use Math.min(remaining, DISCONNECTED_TURN_TIMEOUT_MS); a reconnect must never raise the deadline back above turnStartedAt + TURN_TIMEOUT_MS.
+## 1. MEDIUM — a leaver can reset their own row on the leaderboard
 
-2. MEDIUM — a refused timeout action kills the clock permanently
-server/src/rooms/PokerRoom.ts:456-464
+`server/src/rooms/PokerRoom.ts` `onJoin` (`player.stack = STARTING_STACK;
+player.totalBuyIn = STARTING_STACK;`), `onLeave` (`state.players.delete`)
 
+`room.leave()` is a consented close, so Colyseus routes it straight to
+`onLeave` and skips the reconnection window entirely. The seat is freed and the
+`Player` deleted; rejoining the same code hands out a fresh 1000 chips and, now,
+a fresh `totalBuyIn`, `handsPlayed` and `handsWon`.
 
-const outcome = this.commit(hand, seat, action);
-if (!outcome.ok) {
-  console.error(...);   // and nothing else
-}
-this.turnTimer was already set to undefined at :427, and turnToken / hand.actingSeat are unchanged, so nothing re-arms. Reachable when legalActions(hand, seat) returns null: :446's ?.canCheck yields undefined → fold → applyAction answers "not in this hand" (engine.ts:606). The comment says "the clock cannot be the thing that wedges a table"; the code wedges it. Fix: on failure call forfeit(hand, seat), bump turnToken, syncHand().
+The chip half of this is no longer interesting — unlimited rebuying is a
+sanctioned feature, so nobody has to leave to reload. What is new is that
+`totalBuyIn` is a **public field the product presents as the score**: "stack
+minus this is the only honest score" is the stated reason the buy-in column
+exists. A player who is down 3000 can leave, rejoin, and reappear at the top of
+the standings on `+0`. That is a client deciding an outcome, which is the one
+thing the architecture is supposed to make impossible.
 
-3. MEDIUM — no rate limit on any client message
-server/src/rooms/PokerRoom.ts:134-157
+Nothing else on the leaderboard can be falsified; every other number is
+server-derived and survives a drop.
 
-Action: the turn-token guard at :329 is conditional on hand.actingSeat === player.seat, so out-of-turn spam reaches applyAction + legalActions every time and gets an ActionRejected send back. Full engine evaluation per inbound frame.
-SitOut/SitIn (:138-152) write player.sittingOut with no equality check and no debounce. Because sittingOut is a public schema field, one inbound byte becomes a patch fanned out to all six clients — cheap amplification.
-RequestMediaToken (:154) mints an HMAC-signed JWT per message with no cooldown.
-Fix: per-client token bucket in onCreate; early-return SitOut/SitIn when the value is unchanged; cap RequestMediaToken to roughly one per minute.
+**Fix:** key stacks and buy-in totals to a stable per-room identity rather than
+to the session, so a rejoin returns to the same row. Until then the standings
+are honest for a table nobody leaves, and only for that.
 
-4. MEDIUM — free rebuy still survives phase 3
-server/src/rooms/PokerRoom.ts:262-282 (onLeave), :172 (player.stack = STARTING_STACK)
+## 2. MEDIUM — no rate limit on any client message or HTTP route
 
-room.leave() is a consented close, so Colyseus routes it straight to onLeave and skips the reconnection window entirely (Room.mjs:1049). The seat is freed and the Player deleted; rejoining the same code hands out a fresh 1000. Phase 3 gave identity continuity across a drop but not across a leave, so a losing player still controls their own balance by leaving and coming back. Documented at README.md:197, but it is the one remaining path where a client decides an outcome. Fix: key stacks to a stable per-room identity rather than to the session.
+`server/src/rooms/PokerRoom.ts` `onCreate` handlers; `server/src/index.ts`
+`POST /api/rooms`, `GET /api/rooms/:code`
 
-5. LOW — sit-out/sit-in are ownership-checked but not legality-checked
-server/src/rooms/PokerRoom.ts:138-152
+- `sit-out` / `sit-in` now early-return when the value is unchanged, so they are
+  no longer the cheap amplifier they were.
+- `buy-in` has taken their place and **cannot** be fixed the same way: the
+  minimum top-up for a seat with any chips at all is 1, so `{"amount":1}` in a
+  loop is accepted every time, and each acceptance dirties two public `uint32`
+  fields that fan out to every client. It self-limits at the stack ceiling
+  (`MAX_STACK - stack` accepted frames per hand cycle) and Colyseus coalesces
+  repeated writes within a patch tick, so this is mild — but it means the
+  per-client token bucket is now the load-bearing half of the fix rather than an
+  optimisation on top of the equality checks.
+- `action` still reaches `applyAction` + `legalActions` on every out-of-turn
+  frame and answers each with an `ActionRejected`.
+- `request-media-token` mints an HMAC-signed JWT per message with no cooldown.
+- Both HTTP routes are unauthenticated and unlimited. `GET /api/rooms/:code` is
+  an existence oracle over a 30^6 (~29.4 bit) space and runs a `matchMaker.query`
+  per call, which is enough to find live tables by brute force; `POST /api/rooms`
+  creates a room that lives at least `ROOM_EMPTY_GRACE_MS` with
+  `autoDispose = false`.
 
-The sender is correctly re-derived from client.sessionId and the flag correctly only takes effect at eligiblePlayers() (:513-526), so nothing mid-hand is affected. considerDealing() (:507-511) is idempotent against a deal storm. The only exposure is the unthrottled public flag flip, covered by fix 3.
+**Fix:** a per-client token bucket in `onCreate`, a per-IP bucket on both HTTP
+routes, and a cooldown of roughly one a minute on `request-media-token`. Return
+404 for a malformed code as well as an unknown one, so the two are
+indistinguishable.
 
-6. LOW — onReconnect admits a seatless client rather than refusing
-server/src/rooms/PokerRoom.ts:235-236
+## 3. LOW — production TLS is documented but not asserted
 
-if (!player) return; leaves the client JOINED, holding the previous client's StateView and occupying a clients slot with no Player. No leak (a detached instance is skipped by encodeView) and I could not construct a reachable path, but the correct form is throw, which Colyseus converts to _onLeave(client, FAILED_TO_RECONNECT) (Room.mjs:711-713).
+`server/src/config.ts`, `client/src/net/endpoints.ts`, `render.yaml`
 
-7. Not a defect — seat hijack through the reconnection window is not possible
-claimSeat (:604-612) skips both takenSeats and any seat the running hand still holds, and neither is released until onLeave runs. The write side re-checks playerId independently (server/src/state/mirror.ts:48-54). Reconnection is keyed on client.reconnectionToken — nanoid(9), ~54 bits from a CSPRNG (Room.mjs:661) — not on Player.sessionId, which is public in the schema but is not a credential (MatchMaker.mjs:136-145). Worth recording for the future: a leaked reconnection token lets the holder forcibly close the live client and take over the seat and its hole-card view (Room.mjs:351-353), so that token must never be logged, persisted or put in a URL. Today the SDK keeps it in memory only.
+`docs/DEPLOYMENT.md` requires `https:`/`wss:` in production but nothing enforces
+it. `VITE_SERVER_WS_URL` is baked in at build time with a `ws://localhost:2567`
+fallback, and `CORS_ORIGINS` is a free-form list with no scheme check, so a
+misconfigured deploy ships plaintext silently — and hole cards ride that socket.
+
+**Fix:** when `isProduction`, throw on any `corsOrigins` entry that is not
+`https:`; on the client, throw at module load if `import.meta.env.PROD` and the
+socket URL is not `wss:`. The `isProduction && !livekit.configured` warning in
+`index.ts` is the right precedent.
+
+## 4. LOW — the dealer puck is not drawn on a dead button
+
+`client/src/scene/SeatPlaques.tsx` (`placed.get(snapshot.buttonSeat) ?? null`),
+`client/src/scene/TableCards.tsx` (`placed.get(snapshot.buttonSeat)`)
+
+`state.buttonSeat` can now legitimately name a seat nobody is sitting in - a
+**dead button** is ordinary casino procedure, see `server/src/poker/blinds.ts`.
+`placed` only contains seats that have a player, so the lookup misses and the
+puck simply is not rendered for those hands, and the deck spot falls back to
+its no-button position.
+
+Both paths degrade safely rather than throwing, so this is cosmetic: for a hand
+or two after someone leaves, the table has no visible button. Fixing it means
+placing the puck from the seat *ring* rather than from the occupied seats, which
+is a scene change and wants a screenshot to judge.
+
+## 5. LOW — `onReconnect` admits a seatless client rather than refusing
+
+Already addressed: `onReconnect` now throws when there is no `Player`, which
+Colyseus converts to a clean `FAILED_TO_RECONNECT` leave. Kept here only so the
+reasoning is not rediscovered: returning instead would leave the client JOINED,
+holding the previous client's `StateView` and occupying a slot with nothing
+behind it.
+
+---
+
+## Not defects, recorded so they are not re-litigated
+
+**Seat hijack through the reconnection window is not possible.** `claimSeat`
+skips both `takenSeats` and any seat the running hand still holds, and neither
+is released until `onLeave` runs. The write side re-checks `playerId`
+independently (`state/mirror.ts`). Reconnection is keyed on
+`client.reconnectionToken` — nanoid(9), ~54 bits from a CSPRNG — not on
+`Player.sessionId`, which is public in the schema but is not a credential.
+
+Worth carrying forward: **a leaked reconnection token lets the holder forcibly
+close the live client and take over the seat and its hole-card view**, so that
+token must never be logged, persisted, or put in a URL. Today the SDK keeps it
+in memory only.
+
+**A departed seat's showdown is published.** `mirrorResult` now writes a
+`Reveal` for a seat whose player left mid-hand while all-in. Those cards are
+public by definition — the hand reached a real showdown, which only happens with
+two or more live seats — and the reveal is withdrawn in `onLeave` so it cannot
+be inherited by whoever takes the seat index next. No `Player` instance is
+written through the departed seat; `seatedPlayer` still guards every such write.
+
+---
+
+## Fixed
+
+**The action clock was client-resettable.** `armTurnClock` used to clear the
+pending timer and restart a full budget for whoever was on the clock, with no
+accounting of elapsed time — so any player at the table, in the hand or not,
+could hand the acting seat a fresh thirty seconds by cycling their socket. It is
+now a *deadline computed from state*: `turnDeadline(seat)` is a pure function of
+`turnStartedAt`, whether the acting player is connected, and when they dropped,
+and every branch is bounded above by `turnStartedAt + TURN_TIMEOUT_MS`.
+`bumpTurn` — the only writer of `turnStartedAt` — is called from exactly four
+places, all of them genuinely new decisions. `onLeave` was the last one left: it
+bumped unconditionally, so anyone leaving restarted the acting seat's clock. It
+now compares the acting seat before and after and bumps only on a real change.
+
+**A refused timeout action killed the clock permanently.** `actOnTimeout` logged
+and returned, leaving `turnTimer` undefined with nothing to re-arm it.
+It now falls back to `forfeit`, which folds the seat and moves the clock on, and
+stops rather than re-arming in the unreachable case where the seat will not
+release it.

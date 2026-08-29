@@ -1,4 +1,3 @@
-import { useMemo } from "react";
 import * as THREE from "three";
 import { TABLE } from "./layout.js";
 import {
@@ -40,17 +39,21 @@ import {
  * two unlit quads for the painted light. That is the whole table.
  */
 
-/** A profile in table-local metres, lifted onto the felt's own height. */
-function lathePoints(profile: readonly ProfilePoint[]): THREE.Vector2[] {
-  return profile.map((p) => new THREE.Vector2(p.r, TABLE.topY + p.y));
+/**
+ * A profile, revolved. Built once at module scope rather than in a `useMemo`,
+ * for the same reason the card geometries and the pilaster box are: there is
+ * exactly one table, its shape never changes, and a geometry handed to R3F as
+ * a prop is not one R3F will dispose. A fixed set that lives for the tab has
+ * nothing to leak.
+ */
+function lathe(profile: readonly ProfilePoint[]): THREE.LatheGeometry {
+  const points = profile.map((p) => new THREE.Vector2(p.r, TABLE.topY + p.y));
+  return new THREE.LatheGeometry(points, TABLE_SEGMENTS);
 }
 
-function useLathe(profile: readonly ProfilePoint[]): THREE.LatheGeometry {
-  return useMemo(
-    () => new THREE.LatheGeometry(lathePoints(profile), TABLE_SEGMENTS),
-    [profile],
-  );
-}
+const RAIL = lathe(railProfile());
+const APRON = lathe(apronProfile());
+const PEDESTAL = lathe(pedestalProfile());
 
 /**
  * How far out the neon's painted spill reaches on the floor. The disc is drawn
@@ -63,10 +66,6 @@ const NEON_SPILL_RADIUS = 1.75;
 const CONTACT_RADIUS = 1.55;
 
 export function PokerTable() {
-  const rail = useLathe(useMemo(() => railProfile(), []));
-  const apron = useLathe(useMemo(() => apronProfile(), []));
-  const pedestal = useLathe(useMemo(() => pedestalProfile(), []));
-
   return (
     <group>
       {/* The playing surface. One 1024px disc rather than a tiled swatch, so
@@ -94,13 +93,13 @@ export function PokerTable() {
       </mesh>
 
       <mesh
-        geometry={rail}
+        geometry={RAIL}
         material={leatherMaterial()}
         castShadow
         receiveShadow
       />
-      <mesh geometry={apron} material={woodMaterial()} receiveShadow />
-      <mesh geometry={pedestal} material={woodMaterial(0.72)} />
+      <mesh geometry={APRON} material={woodMaterial()} receiveShadow />
+      <mesh geometry={PEDESTAL} material={woodMaterial(0.72)} />
 
       {/* The neon race, tucked under the rail's outer lip so what a seated
           player sees is the light on the apron rather than the tube. Its

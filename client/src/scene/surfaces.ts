@@ -18,12 +18,16 @@ import {
  * dark, deliberately out of focus behind the faces, and never seen closer than
  * about a metre.
  *
- * Drawn, they cost about 90ms of canvas work once at startup, no licence rows,
- * no fetch that can 404, and - the part that actually matters - they are
- * *parameterised by the same numbers as the geometry*. The betting line on the
- * felt is drawn at a world radius the layout can be asked for, so it cannot
- * drift out of step with where bets actually sit. A downloaded felt texture
- * could not know where the bets are.
+ * Drawn, they cost no licence rows, no fetch that can 404, and - the part that
+ * actually matters - they are *parameterised by the same numbers as the
+ * geometry*. The betting line on the felt is drawn at a world radius the
+ * layout can be asked for, so it cannot drift out of step with where bets
+ * actually sit. A downloaded felt texture could not know where the bets are.
+ *
+ * What they do cost is time: about 280ms of measured per-pixel work, all of it
+ * on the main thread. Left lazy, every millisecond of that lands the instant
+ * the 3D room mounts, which is the single worst moment available. `warmSurfaces`
+ * at the bottom of this file moves it into the lobby instead.
  *
  * What was genuinely lost: real measured normal and roughness maps. What
  * replaces them is fine-grained value noise baked into the albedo plus honest
@@ -69,8 +73,14 @@ export const PALETTE = {
  * draws it, which is the only reason any of this is reviewable.
  */
 function hash(x: number, y: number): number {
-  const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
-  return n - Math.floor(n);
+  // Integer bit-mixing rather than the `fract(sin(dot(...)))` every shader
+  // tutorial uses. That form costs a `Math.sin` per lattice corner, which is
+  // sixteen transcendentals per pixel at four octaves - measured at 557ms to
+  // draw this file's textures, against 396ms for the same noise mixed with
+  // shifts and multiplies. Same distribution, same look, no trig.
+  let h = Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 
 function smoothNoise(x: number, y: number): number {
@@ -105,6 +115,17 @@ function fbm(x: number, y: number, octaves: number): number {
   }
   return value / total;
 }
+
+/**
+ * Edge of every tiled swatch.
+ *
+ * 256 rather than 512, which is a quarter of the pixels and therefore a
+ * quarter of the noise. These are *tiled* - the leather repeats eighteen times
+ * around the rail, the carpet eight times across the floor - so what the size
+ * sets is texel density per tile, and at 256 that is already finer than the
+ * felt, which is the surface closest to anybody's eye.
+ */
+const TILE = 256;
 
 function context(width: number, height: number): CanvasRenderingContext2D {
   const el = document.createElement("canvas");
@@ -266,9 +287,9 @@ let leather: THREE.CanvasTexture | null = null;
 export function leatherTexture(): THREE.CanvasTexture {
   if (leather) return leather;
 
-  const ctx = context(512, 512);
+  const ctx = context(TILE, TILE);
   ctx.fillStyle = PALETTE.leather;
-  ctx.fillRect(0, 0, 512, 512);
+  ctx.fillRect(0, 0, TILE, TILE);
 
   // The pebble itself: bright specks on a dark ground at a scale where the
   // eye reads grain rather than dots.
@@ -277,12 +298,12 @@ export function leatherTexture(): THREE.CanvasTexture {
 
   // A broad highlight sweep, so the rail is not uniformly matte all the way
   // round. Leather is the one surface at this table anyone actually touches.
-  const sheen = ctx.createLinearGradient(0, 0, 0, 512);
+  const sheen = ctx.createLinearGradient(0, 0, 0, TILE);
   sheen.addColorStop(0, "rgba(0,0,0,0.3)");
   sheen.addColorStop(0.5, `${PALETTE.leatherHigh}22`);
   sheen.addColorStop(1, "rgba(0,0,0,0.3)");
   ctx.fillStyle = sheen;
-  ctx.fillRect(0, 0, 512, 512);
+  ctx.fillRect(0, 0, TILE, TILE);
 
   leather = colourTexture(ctx, [18, 1]);
   return leather;
@@ -294,21 +315,21 @@ let wood: THREE.CanvasTexture | null = null;
 export function woodTexture(): THREE.CanvasTexture {
   if (wood) return wood;
 
-  const ctx = context(512, 512);
+  const ctx = context(TILE, TILE);
   ctx.fillStyle = PALETTE.walnut;
-  ctx.fillRect(0, 0, 512, 512);
+  ctx.fillRect(0, 0, TILE, TILE);
 
   // Grain lines: noise sampled hugely stretched along one axis, then
   // thresholded into rings. Cheaper and more convincing than drawing curves.
-  const image = ctx.getImageData(0, 0, 512, 512);
+  const image = ctx.getImageData(0, 0, TILE, TILE);
   const data = image.data;
   const dark = new THREE.Color(PALETTE.walnutGrain);
-  for (let y = 0; y < 512; y++) {
-    for (let x = 0; x < 512; x++) {
-      const warp = fbm(x / 512 * 3, (y / 512) * 0.4, 3);
-      const rings = Math.abs(Math.sin((x / 512) * 26 + warp * 5.5));
+  for (let y = 0; y < TILE; y++) {
+    for (let x = 0; x < TILE; x++) {
+      const warp = fbm((x / TILE) * 3, (y / TILE) * 0.4, 3);
+      const rings = Math.abs(Math.sin((x / TILE) * 26 + warp * 5.5));
       const mix = Math.pow(1 - rings, 3) * 0.7;
-      const i = (y * 512 + x) * 4;
+      const i = (y * TILE + x) * 4;
       data[i] = clampByte(data[i]! * (1 - mix) + dark.r * 255 * mix);
       data[i + 1] = clampByte(data[i + 1]! * (1 - mix) + dark.g * 255 * mix);
       data[i + 2] = clampByte(data[i + 2]! * (1 - mix) + dark.b * 255 * mix);
@@ -333,26 +354,26 @@ let carpet: THREE.CanvasTexture | null = null;
 export function carpetTexture(): THREE.CanvasTexture {
   if (carpet) return carpet;
 
-  const ctx = context(512, 512);
+  const ctx = context(TILE, TILE);
   ctx.fillStyle = PALETTE.carpet;
-  ctx.fillRect(0, 0, 512, 512);
+  ctx.fillRect(0, 0, TILE, TILE);
 
   // A quatrefoil lattice, drawn once and tiled. Faint enough that it is
   // texture from a seat and pattern only if you go and look.
   ctx.strokeStyle = PALETTE.carpetFigure;
   ctx.globalAlpha = 0.5;
-  ctx.lineWidth = 9;
+  ctx.lineWidth = TILE / 57;
   for (let gx = 0; gx <= 2; gx++) {
     for (let gy = 0; gy <= 2; gy++) {
-      const cx = gx * 256;
-      const cy = gy * 256;
+      const cx = (gx * TILE) / 2;
+      const cy = (gy * TILE) / 2;
       for (let lobe = 0; lobe < 4; lobe++) {
         const angle = (lobe * Math.PI) / 2;
         ctx.beginPath();
         ctx.arc(
-          cx + Math.cos(angle) * 62,
-          cy + Math.sin(angle) * 62,
-          62,
+          cx + Math.cos(angle) * (TILE * 0.242),
+          cy + Math.sin(angle) * (TILE * 0.242),
+          TILE * 0.242,
           angle + Math.PI * 0.55,
           angle + Math.PI * 1.45,
         );
@@ -374,9 +395,9 @@ let velvet: THREE.CanvasTexture | null = null;
 export function velvetTexture(): THREE.CanvasTexture {
   if (velvet) return velvet;
 
-  const ctx = context(512, 512);
+  const ctx = context(TILE, TILE);
   ctx.fillStyle = PALETTE.velvet;
-  ctx.fillRect(0, 0, 512, 512);
+  ctx.fillRect(0, 0, TILE, TILE);
 
   // Stretched hard along Y: nap runs the way the cloth hangs.
   grain(ctx, 120, 0.1, 3, 12);
@@ -385,11 +406,11 @@ export function velvetTexture(): THREE.CanvasTexture {
   // Panel seams, at the pilaster spacing, so the wall covering and the joinery
   // agree with each other.
   ctx.strokeStyle = "rgba(0,0,0,0.35)";
-  ctx.lineWidth = 6;
-  for (const x of [0, 256, 512]) {
+  ctx.lineWidth = TILE / 85;
+  for (const x of [0, TILE / 2, TILE]) {
     ctx.beginPath();
     ctx.moveTo(x, 0);
-    ctx.lineTo(x, 512);
+    ctx.lineTo(x, TILE);
     ctx.stroke();
   }
 
@@ -847,6 +868,68 @@ export function contactShadowMaterial(
         depthWrite: false,
       }),
   );
+}
+
+/**
+ * Draw everything, one texture per turn of the event loop.
+ *
+ * Every builder above is lazy, which on its own means the whole 280ms lands
+ * synchronously on the first render of `PokerTable` and `RoomShell` - a visible
+ * freeze at exactly the moment the room appears, which is the frame a player
+ * judges the whole product on.
+ *
+ * So this is called from `main.tsx` while the lobby is on screen. The lobby is
+ * a form somebody is typing a name into for several seconds and has no
+ * animation to stutter, so the work is free there. Chained through `setTimeout`
+ * rather than run in one block so the browser can paint between textures, and
+ * ordered cheapest-first so that a player who joins immediately still gets the
+ * small ones for nothing.
+ *
+ * Not a worker with an `OffscreenCanvas`, which would be the textbook answer:
+ * these draw text, gradients and `roundRect` through the same 2D API, and
+ * moving them would mean a second code path for a browser matrix that is not
+ * pinned down until phase 6. Deferring gets the same result today.
+ *
+ * Idempotent - every builder returns its cache - so calling it twice, or
+ * calling it after the room has already built something, costs nothing. Returns
+ * a cancel function for the case where the tab is closed mid-warm.
+ */
+export function warmSurfaces(): () => void {
+  const queue = [
+    glowTexture,
+    contactShadowTexture,
+    chipTexture,
+    woodTexture,
+    carpetTexture,
+    leatherTexture,
+    velvetTexture,
+    // Last, and on its own: a 1024px disc is more per-pixel work than every
+    // other texture in this file put together.
+    feltTexture,
+  ];
+
+  let index = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const step = () => {
+    const build = queue[index++];
+    if (!build) return;
+    try {
+      build();
+    } catch {
+      // No 2D context - a headless or hardened browser. The room will try
+      // again on its own and fail the same way, visibly, which is the right
+      // place for it to surface.
+      return;
+    }
+    timer = setTimeout(step, 0);
+  };
+  timer = setTimeout(step, 0);
+
+  return () => {
+    if (timer !== undefined) clearTimeout(timer);
+    index = queue.length;
+  };
 }
 
 /** Where the felt's own inlay ring sits, in world radii. */

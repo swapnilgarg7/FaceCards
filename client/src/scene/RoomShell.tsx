@@ -244,10 +244,16 @@ export function RoomShell() {
         <meshStandardMaterial color="#0d0a10" roughness={1} />
       </mesh>
 
+      {/* Frustum culling off, for the reason `ChipField` turns it off: an
+          `InstancedMesh` is culled against the bounding sphere of its *source
+          geometry*, which here is one box at the origin. Left on, all eight
+          pilasters vanish the moment the camera turns away from the middle of
+          the room. */}
       <instancedMesh
         ref={pilasters}
         geometry={pilasterGeometry}
         material={joinery.column}
+        frustumCulled={false}
         args={[undefined, undefined, PILASTER_COUNT]}
       />
 
@@ -287,12 +293,14 @@ export function RoomShell() {
         ref={sconces}
         geometry={sconceGeometry}
         material={lights.lampInner}
+        frustumCulled={false}
         args={[undefined, undefined, PILASTER_COUNT]}
       />
       <instancedMesh
         ref={sconceGlows}
         geometry={sconceGlowGeometry}
         material={lights.sconceGlow}
+        frustumCulled={false}
         args={[undefined, undefined, PILASTER_COUNT]}
       />
 

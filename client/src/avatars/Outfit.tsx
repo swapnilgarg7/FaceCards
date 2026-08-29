@@ -26,6 +26,11 @@ import type { Outfit } from "./archetypes.js";
  * The face-plane socket contract from `archetypes.ts` applies here exactly as
  * it does to `HeadPieceMesh`: nothing in this file may reach up past
  * `body.facePlaneBottomY`, or it crops the chin off a real person's face.
+ *
+ * Only the two pieces that change the *outline* cast a shadow - the yoke and
+ * the cape. A lapel, a collar, a bandana knot and a clasp all sit inside a
+ * torso that is already casting, so their shadows are invisible and their cost
+ * is another six submissions to the depth pass every frame.
  */
 export function OutfitMesh({
   outfit,
@@ -59,7 +64,6 @@ export function OutfitMesh({
               key={side}
               position={[side * 0.055, shoulder - 0.115, front * 0.9]}
               rotation-z={side * 0.34}
-              castShadow
             >
               <boxGeometry args={[0.055, 0.2, 0.018]} />
               <meshStandardMaterial color={accent} roughness={0.55} />
@@ -67,7 +71,7 @@ export function OutfitMesh({
           ))}
           {/* Collar: a pale band at the throat, which is the one high-contrast
               edge a dark suit needs to stop reading as a hole. */}
-          <mesh position={[0, shoulder - 0.012, front * 0.72]} castShadow>
+          <mesh position={[0, shoulder - 0.012, front * 0.72]}>
             <boxGeometry args={[0.15, 0.036, 0.05]} />
             <meshStandardMaterial color={outfit.collar} roughness={0.7} />
           </mesh>
@@ -95,7 +99,7 @@ export function OutfitMesh({
             <meshStandardMaterial color={accent} roughness={0.8} />
           </mesh>
           {/* Bandana, knotted at the throat. */}
-          <mesh position={[0, shoulder - 0.008, front * 0.55]} castShadow>
+          <mesh position={[0, shoulder - 0.008, front * 0.55]}>
             <boxGeometry args={[0.13, 0.055, 0.055]} />
             <meshStandardMaterial color={accent} roughness={0.85} />
           </mesh>
@@ -131,7 +135,7 @@ export function OutfitMesh({
       // right one for the two archetypes whose silhouette is already doing the
       // work: an alien's skull and a shark's fin.
       return (
-        <mesh position={[0, shoulder - 0.02, 0]} rotation-x={Math.PI / 2} castShadow>
+        <mesh position={[0, shoulder - 0.02, 0]} rotation-x={Math.PI / 2}>
           <torusGeometry args={[0.088, 0.019, 8, 20]} />
           <meshStandardMaterial
             color={accent}

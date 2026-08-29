@@ -37,9 +37,18 @@ Twenty-four of the pack's fifty clips are shipped: the ones the table can actual
 
 ## Fonts
 
-| Font | Source URL | License |
-| --- | --- | --- |
-| _(none yet)_ | | |
+Two faces, latin subsets only, **self-hosted** rather than linked from Google's CDN. Three reasons, in order of how much they matter: the fonts are needed by canvas textures inside the 3D scene, and a stylesheet that has to be fetched, parsed and then resolved is a race the first rail plaque loses; a hosted font is a third-party request from every player's browser; and it is one more thing that can be slow or blocked on somebody's network while six friends wait for a table.
+
+Both are SIL Open Font License 1.1, which permits redistribution of the font files (that is the whole point of the licence) provided the notice and licence text travel with them. They do, at `client/public/fonts/LICENSE.txt`, which ships to the client alongside the `.woff2` files. **OFL requires no attribution in the rendered product**, so there is no in-app credit line and no row in the CC-BY notice below.
+
+`scripts/verify-phase5.mjs` checks this table against the files on disk and against `client/src/styles.css` in all three directions, so a font cannot ship without a row here, a row cannot outlive its file, and a `@font-face` cannot point at a file that is not there.
+
+| Font | File in repo | Source URL | Author | License | Attribution required |
+| --- | --- | --- | --- | --- | --- |
+| Cinzel Decorative 700 (latin) | `client/public/fonts/cinzel-decorative-latin-700.woff2` | https://fonts.google.com/specimen/Cinzel+Decorative | Natanael Gama | OFL 1.1 | No |
+| Bebas Neue 400 (latin) | `client/public/fonts/bebas-neue-latin-400.woff2` | https://fonts.google.com/specimen/Bebas+Neue | Dharma Type | OFL 1.1 | No |
+
+**Not a file:** every other surface in the room. Felt, oxblood leather, walnut, brass, carpet, velvet, the chip face and edge, the card atlas, the neon glow and the baked contact shadows are all drawn onto a canvas at startup by `client/src/scene/surfaces.ts`, `cardAtlas.ts`, `plaques.ts` and `avatars/textures.ts`. The phase-5 plan budgeted for ambientCG PBR sets and Poly Haven props; see `ASSET-SOURCES.md` and the phase-5 notes in `plan.md` for why drawing them won. No downloads means no licence rows, which is why this table is two lines long for a whole art phase.
 
 ## ML models & runtimes
 

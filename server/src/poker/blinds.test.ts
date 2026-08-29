@@ -23,6 +23,35 @@ function deal(
   return next;
 }
 
+/** First dealt seat clockwise of `from`, wrapping once. */
+function leftOf(dealt: readonly number[], from: number): number {
+  return dealt.find((seat) => seat > from) ?? dealt[0]!;
+}
+
+/**
+ * The invariant that makes the button mean anything: **the first dealt seat
+ * clockwise of the button is the seat that posts the first blind.**
+ *
+ * Nothing else pins it down. Asserting only that the button does not *equal* a
+ * blind passes happily while the button sits two seats behind where it belongs
+ * with a live player stranded in the gap - and because `openRound` walks the
+ * ring from the button, that stranded seat then opens the action on every
+ * postflop street of every hand. Preflop order comes off the big blind instead,
+ * so a fold-heavy hand looks completely normal while it happens.
+ */
+function expectButtonPlaced(hand: BlindPositions): void {
+  if (hand.dealt.length === 2) {
+    // Heads-up: the button *is* the small blind, so the seat to its left is
+    // the big blind.
+    expect(hand.smallBlindSeat).toBe(hand.button);
+    expect(leftOf(hand.dealt, hand.button)).toBe(hand.bigBlindSeat);
+    return;
+  }
+  expect(leftOf(hand.dealt, hand.button)).toBe(
+    hand.smallBlindSeat ?? hand.bigBlindSeat,
+  );
+}
+
 describe("the first hand a table plays", () => {
   it("starts the button on the lowest seat and runs the blinds up from it", () => {
     const first = deal(table([0, 1, 2, 3]), null);
@@ -61,6 +90,16 @@ describe("the first hand a table plays", () => {
 });
 
 describe("the blinds walking a stable table", () => {
+  it("keeps the button one seat behind the first blind, hand after hand", () => {
+    const seats = table([0, 1, 2, 3, 4]);
+    let hand = deal(seats, null);
+    expectButtonPlaced(hand);
+    for (let i = 0; i < 12; i++) {
+      hand = deal(seats, hand);
+      expectButtonPlaced(hand);
+    }
+  });
+
   it("moves every position on by exactly one seat each hand", () => {
     const seats = table([0, 1, 2]);
     let hand = deal(seats, null);
@@ -122,6 +161,28 @@ describe("a player leaving between hands", () => {
     expect(two.smallBlindPos).toBe(2);
     expect(two.smallBlindSeat).toBeNull();
     expect(two.button).toBe(1);
+  });
+
+  it("re-places a button the ring has moved out from under", () => {
+    // Regression. Seat 1 misses three hands while the button walks past their
+    // chair, then is dealt back in mid-rotation. The button had been carried
+    // to seat 0 and the small blind is on seat 2, which leaves seat 1 sitting
+    // in the gap between them - so the flop, turn and river would all open on
+    // seat 1 instead of on the small blind, every hand, for as long as the
+    // misplacement lasted.
+    const four = table([0, 1, 2, 3]);
+    const three = table([0, 2, 3]);
+
+    let hand = deal(four, null);
+    hand = deal(three, hand);
+    hand = deal(three, hand);
+    hand = deal(three, hand);
+    expect([hand.button, hand.smallBlindSeat, hand.bigBlindSeat]).toEqual([3, 0, 2]);
+
+    const back = deal(four, hand);
+    expect([back.smallBlindSeat, back.bigBlindSeat]).toEqual([2, 3]);
+    expect(back.button).toBe(1);
+    expectButtonPlaced(back);
   });
 
   it("keeps the button off a live seat when the position is dead", () => {
@@ -243,13 +304,93 @@ describe("invariants that must hold for any roster churn", () => {
         expect(arranged.dealt).toContain(arranged.smallBlindSeat);
         expect(arranged.smallBlindSeat).not.toBe(arranged.bigBlindSeat);
       }
-      // The button never shares a chair with a blind at a three-plus-handed
-      // table: that would open the postflop action in the wrong seat.
-      if (arranged.dealt.length > 2) {
-        expect(arranged.button).not.toBe(arranged.bigBlindSeat);
-        expect(arranged.button).not.toBe(arranged.smallBlindSeat);
-      }
+      // The button is always exactly one dealt seat behind the first blind.
+      // This subsumes "the button never shares a chair with a blind", which is
+      // the weaker check that let a two-seat misplacement through.
+      expectButtonPlaced(arranged);
       previousBig = arranged.bigBlindSeat;
     }
+  });
+});
+
+describe("hostile churn, fuzzed", () => {
+  it("holds every blind invariant over thousands of arrangements", () => {
+    // The table-driven cases above each pin one rule. This pins all of them at
+    // once against roster churn nobody would think to write by hand: seats
+    // appearing, vanishing, busting, waiting and coming back in every order.
+    // The button defect this file now regresses against survived hand-written
+    // cases precisely because it needed four specific hands in sequence.
+    let seed = 0x2f6e2b1 >>> 0;
+    const rand = (n: number) => {
+      seed ^= seed << 13;
+      seed ^= seed >>> 17;
+      seed ^= seed << 5;
+      seed >>>= 0;
+      return seed % n;
+    };
+
+    let hand: BlindPositions | null = null;
+    let previousBig = -1;
+    let arrangements = 0;
+    // How many hands each seat has gone without being dealt in, so a seat can
+    // be shown not to wait forever.
+    const waiting = new Map<number, number>();
+
+    for (let round = 0; round < 4000; round++) {
+      const roster: BlindSeat[] = [];
+      for (let seat = 0; seat < 6; seat++) {
+        if (rand(4) === 0) continue;
+        roster.push({ seat, ready: true, owesBlind: rand(3) === 0 });
+      }
+
+      const next = nextBlinds(roster, hand);
+      if (!next) {
+        // Fewer than two seats: the table waits, and the arrangement it waits
+        // on must be the one it will resume from.
+        expect(roster.length).toBeLessThan(2);
+        continue;
+      }
+      arrangements++;
+
+      expect(next.dealt.length).toBeGreaterThanOrEqual(2);
+      expect(next.dealt).toEqual([...next.dealt].sort((a, b) => a - b));
+      expect(new Set(next.dealt).size).toBe(next.dealt.length);
+      // Nobody is dealt in who was not at the table and ready.
+      for (const seat of next.dealt) {
+        expect(roster.some((r) => r.seat === seat)).toBe(true);
+      }
+
+      // There is always a big blind, it is always live, and it never lands on
+      // the same seat two hands running.
+      expect(next.dealt).toContain(next.bigBlindSeat);
+      expect(next.bigBlindSeat).not.toBe(previousBig);
+
+      // A posted small blind is live, is not the big blind, and is exactly one
+      // dealt seat to the big blind's right.
+      if (next.smallBlindSeat !== null) {
+        expect(next.dealt).toContain(next.smallBlindSeat);
+        expect(next.smallBlindSeat).not.toBe(next.bigBlindSeat);
+        expect(leftOf(next.dealt, next.smallBlindSeat)).toBe(next.bigBlindSeat);
+      }
+
+      // The one the hand-written cases were too weak to catch.
+      expectButtonPlaced(next);
+
+      // A waiting seat is dealt in within one lap of the table rather than
+      // being stepped over forever.
+      for (const seat of roster.map((r) => r.seat)) {
+        const missed = next.dealt.includes(seat)
+          ? 0
+          : (waiting.get(seat) ?? 0) + 1;
+        waiting.set(seat, missed);
+        expect(missed).toBeLessThanOrEqual(12);
+      }
+
+      previousBig = next.bigBlindSeat;
+      hand = next;
+    }
+
+    // Guard against the fuzz silently arranging almost nothing.
+    expect(arrangements).toBeGreaterThan(3000);
   });
 });
