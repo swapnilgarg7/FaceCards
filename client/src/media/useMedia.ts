@@ -43,6 +43,15 @@ export interface UseMedia {
   faceBoxes: FaceBoxStore;
   /** Broadcast our own framing. Null means "tracking, no face right now". */
   sendFaceBox(box: FaceBox | null): void;
+  /**
+   * Ask for a peer's video at a given layer. Driven by camera yaw from
+   * `scene/AttentionDirector.tsx`, on top of the `adaptiveStream` baseline.
+   *
+   * Stable across renders, because it is called from inside `useFrame`: a new
+   * function identity every render would make the scene re-subscribe its frame
+   * loop for no reason.
+   */
+  setQuality(peerId: string, quality: "high" | "medium" | "low"): void;
   micMuted: boolean;
   cameraOff: boolean;
   audioBlocked: boolean;
@@ -188,6 +197,15 @@ export function useMedia(token: MediaTokenPayload | null): UseMedia {
     providerRef.current?.sendData(FACE_BOX_TOPIC, encodeFaceBox(box));
   }, []);
 
+  const setQuality = useCallback(
+    (peerId: string, quality: "high" | "medium" | "low") => {
+      // A no-op before connect and after leave, like `sendFaceBox`: the scene
+      // runs on a frame loop that knows nothing about room lifecycle.
+      providerRef.current?.setQuality(peerId, quality);
+    },
+    [],
+  );
+
   return {
     state,
     error,
@@ -198,6 +216,7 @@ export function useMedia(token: MediaTokenPayload | null): UseMedia {
     remoteCameraOff,
     faceBoxes,
     sendFaceBox,
+    setQuality,
     micMuted,
     cameraOff,
     audioBlocked,

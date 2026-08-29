@@ -47,6 +47,9 @@ export interface SettingsPanelProps {
   shareUrl: string;
   media: UseMedia;
   sensitivity: number;
+  /** Dealt out of the next hand. Server-owned; this is what it says. */
+  sittingOut: boolean;
+  onSitOutChange(sittingOut: boolean): void;
   onSensitivityChange(value: number): void;
   onClose(): void;
   onLeave(): void;
@@ -57,6 +60,8 @@ export function SettingsPanel({
   shareUrl,
   media,
   sensitivity,
+  sittingOut,
+  onSitOutChange,
   onSensitivityChange,
   onClose,
   onLeave,
@@ -172,9 +177,27 @@ export function SettingsPanel({
         </section>
 
         <section className="settings__section">
+          <h3>Your seat</h3>
+          <div className="settings__row">
+            <button className="btn" onClick={() => onSitOutChange(!sittingOut)}>
+              {sittingOut ? "Deal me back in" : "Sit out next hand"}
+            </button>
+          </div>
+          <p className="note">
+            {sittingOut
+              ? "You are dealt out. Your seat and your chips are still yours, and you can talk to everyone the whole time."
+              : "Skips the deals, keeps the seat. It takes effect at the next hand: nothing pulls you out of one you are already in."}
+          </p>
+        </section>
+
+        <section className="settings__section">
           <button className="btn btn--ghost" onClick={onLeave}>
             Leave table
           </button>
+          <p className="note">
+            Leaving gives up the seat and the chips. A dropped connection does
+            not: that holds your seat for a minute while you come back.
+          </p>
         </section>
 
         <p className="note settings__hint">Press Esc to go back to the table.</p>

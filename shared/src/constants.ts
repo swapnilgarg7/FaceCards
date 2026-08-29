@@ -55,3 +55,36 @@ export const PAYOUT_DISPLAY_MS = 6_000;
 
 /** Pause before dealing once a table first has enough players with chips. */
 export const HAND_START_DELAY_MS = 2_000;
+
+/**
+ * How long a dropped player keeps their seat, their stack and their own cards.
+ *
+ * This is the window `allowReconnection()` opens in `PokerRoom.onDrop`, and it
+ * is the difference between closing a laptop and being knocked out of the
+ * game. Long enough to carry a lid closed on the way to another room, short
+ * enough that a table of six is not held hostage by a seat nobody is in.
+ *
+ * The client SDK reconnects on its own with an exponential backoff, so this
+ * also has to outlast that retry ladder or the window would close while the
+ * browser was still politely waiting to try again.
+ */
+export const RECONNECT_GRACE_MS = 60_000;
+
+/**
+ * How long a connected player has to act before the server acts for them.
+ *
+ * The action clock is server-side and authoritative, like everything else that
+ * decides anything. The client renders a countdown off `PokerState.actingMs`,
+ * but it is a picture of the server's clock, never the clock itself.
+ */
+export const TURN_TIMEOUT_MS = 30_000;
+
+/**
+ * The same clock for a seat whose player is mid-reconnect.
+ *
+ * Deliberately short. A player who is not there cannot be thinking, and the
+ * exit criterion for this phase is that a closed laptop does not stall the
+ * table. They keep their seat and their stack for `RECONNECT_GRACE_MS`; what
+ * they do not keep is everyone else's evening.
+ */
+export const DISCONNECTED_TURN_TIMEOUT_MS = 5_000;

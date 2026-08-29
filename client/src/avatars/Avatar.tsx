@@ -5,7 +5,24 @@ import type { Seat } from "../scene/layout.js";
 import { dampAngle } from "../scene/damp.js";
 import type { FaceBox } from "../scene/faceBox.js";
 import type { FaceBoxStore } from "../scene/faceBoxStore.js";
+import {
+  FACE_INSET,
+  FACE_PLANE_ASPECT,
+  FACE_PLANE_HEIGHT,
+  FACE_PLANE_WIDTH,
+  HEAD_RADIUS,
+  NECK_RADIUS_BOTTOM,
+  NECK_RADIUS_TOP,
+  TORSO_BREATH_RISE,
+  TORSO_BREATH_SCALE,
+  TORSO_DEPTH,
+  TORSO_LENGTH,
+  TORSO_RADIUS,
+  bodyGeometry,
+} from "../scene/body.js";
 import { faceCrop } from "../scene/faceCrop.js";
+import { avatarLook } from "./archetypes.js";
+import { HeadPieceMesh } from "./HeadPiece.js";
 import { DEFAULT_SMOOTHING, stepFraming } from "../scene/faceSmooth.js";
 import { useFaceTexture } from "./useFaceTexture.js";
 import {
@@ -23,12 +40,12 @@ import {
  * face-plane socket: a plane of `FACE_PLANE_*` dimensions, centred at the
  * seat's eye height, facing the seat's forward. Everything else here is
  * placeholder geometry.
+ *
+ * Which body you get is the archetype you chose in the lobby, resolved through
+ * `archetypes.ts`. The socket does not know or care which one it is on, which
+ * is the entire point of routing it through one lookup: the webcam binding is
+ * archetype-agnostic today and has to stay that way once these are meshes.
  */
-
-/** Portrait, because faces are. The crop honours this exactly. */
-export const FACE_PLANE_WIDTH = 0.26;
-export const FACE_PLANE_HEIGHT = 0.34;
-export const FACE_PLANE_ASPECT = FACE_PLANE_WIDTH / FACE_PLANE_HEIGHT;
 
 /**
  * Fallback framing, for a peer whose face is not being tracked: their browser
@@ -42,18 +59,17 @@ export const FACE_PLANE_ASPECT = FACE_PLANE_WIDTH / FACE_PLANE_HEIGHT;
 export const FACE_ZOOM = 0.62;
 export const FACE_Y_BIAS = 0.08;
 
-const HEAD_RADIUS = 0.14;
-/** How far the face plane floats off the head, so it never z-fights. */
-const FACE_INSET = HEAD_RADIUS * 0.94;
 /**
  * A few degrees down, so a face reads as looking at the table rather than
  * staring at the far wall. Measured in the flipped, forward-facing frame.
  */
 const FACE_PITCH = -0.07;
 
-const CHEST_Y = 0.98;
 const NAME_PLATE_Y = 0.86;
 const NAME_PLATE_HEIGHT = 0.075;
+/** Clear of the longest name, so the badge never lands on the text. */
+const MUTE_GLYPH_SIZE = 0.075;
+const MUTE_GLYPH_GAP = 0.028;
 
 /**
  * How fast a player slides to a new seat when the table re-flows. Slow enough
@@ -62,23 +78,18 @@ const NAME_PLATE_HEIGHT = 0.075;
  */
 const RESEAT_LAMBDA = 3.4;
 
-/** Distinguishes seats before anyone's camera is up. Phase 5 owns the art. */
-const SEAT_COLOURS = [
-  "#4c6ef5",
-  "#12b886",
-  "#f08c00",
-  "#e64980",
-  "#7950f2",
-  "#0ca678",
-  "#fa5252",
-  "#1098ad",
-  "#c2255c",
-  "#f59f00",
-];
+/**
+ * What every material drops to while a player is mid-reconnect. One flat,
+ * unsaturated grey reads across the table as "nobody home" without needing a
+ * badge nobody would be looking at.
+ */
+const AWAY_COLOUR = "#3a3f48";
 
 export interface AvatarProps {
   seat: Seat;
   displayName: string;
+  /** Archetype id from server state. Validated there, resolved here. */
+  avatar: string;
   /** Whose face this is. The key into `faceBoxes`. */
   peerId: string;
   /** Attached, playing element from the media provider, or null. */
@@ -89,11 +100,18 @@ export interface AvatarProps {
   speaking: boolean;
   micMuted: boolean;
   cameraOff: boolean;
+  /**
+   * Dropped, and inside their reconnection window. The seat is still theirs
+   * and their chips are still in the pot, so the body stays; what changes is
+   * that it reads as unoccupied rather than as someone sitting very still.
+   */
+  away: boolean;
 }
 
 export function Avatar({
   seat,
   displayName,
+  avatar,
   peerId,
   videoEl,
   faceBoxes,
@@ -101,13 +119,26 @@ export function Avatar({
   speaking,
   micMuted,
   cameraOff,
+  away,
 }: AvatarProps) {
   const faceTexture = useFaceTexture(videoEl);
 
-  const colour = SEAT_COLOURS[seat.index % SEAT_COLOURS.length]!;
+  const look = useMemo(() => avatarLook(avatar), [avatar]);
+  // Drained rather than hidden. An empty chair at a real table is still a
+  // chair, and removing the body would make the seat look free when it is
+  // being held.
+  const colour = away ? AWAY_COLOUR : look.body;
+  const headColour = away ? AWAY_COLOUR : look.headColour;
   const faceMask = faceMaskTexture();
   const ringMask = speakingRingTexture();
   const plate = useMemo(() => namePlateTexture(displayName), [displayName]);
+
+  // The whole body hangs off this seat's eye-line, so nothing can drift out
+  // of proportion with the face plane it has to sit under. Memoised on the one
+  // input it has, like the archetype lookup beside it: this component
+  // re-renders whenever anyone starts or stops talking, and none of that
+  // changes how tall a person is.
+  const body = useMemo(() => bodyGeometry(seat.eyeY), [seat.eyeY]);
 
   const rootRef = useRef<THREE.Group>(null);
   const torsoRef = useRef<THREE.Mesh>(null);
@@ -155,8 +186,10 @@ export function Avatar({
     // per frame would re-render every avatar sixty times a second.
     const torso = torsoRef.current;
     if (torso) {
-      torso.scale.y = 1 + Math.sin(t * 0.9) * 0.012;
-      torso.position.y = 0.8 + Math.sin(t * 0.9) * 0.004;
+      // Only y is touched: the x and z scale set in JSX are what make the
+      // chest a chest rather than a column, and must survive every frame.
+      torso.scale.y = 1 + Math.sin(t * 0.9) * TORSO_BREATH_SCALE;
+      torso.position.y = body.torsoY + Math.sin(t * 0.9) * TORSO_BREATH_RISE;
     }
 
     // Framing runs here rather than in an effect because it is animation: the
@@ -197,26 +230,55 @@ export function Avatar({
       // instead of strobing on every syllable boundary.
       ring.opacity = THREE.MathUtils.damp(
         ring.opacity,
-        speaking ? 0.85 : 0,
+        speaking && !away ? 0.85 : 0,
         6,
         delta,
       );
     }
   });
 
-  const showVideo = faceTexture !== null && !cameraOff;
+  // A dropped player's track is gone from the SFU too, so the texture would
+  // already be null; saying so explicitly means the placeholder does not
+  // depend on the media layer having noticed first.
+  const showVideo = faceTexture !== null && !cameraOff && !away;
 
   return (
     <group ref={rootRef}>
-      <mesh ref={torsoRef} position={[0, 0.8, 0]} castShadow>
-        <capsuleGeometry args={[0.21, 0.36, 4, 12]} />
+      <mesh
+        ref={torsoRef}
+        position={[0, body.torsoY, 0]}
+        scale={[1, 1, TORSO_DEPTH]}
+        castShadow
+      >
+        <capsuleGeometry args={[TORSO_RADIUS, TORSO_LENGTH, 4, 12]} />
         <meshStandardMaterial color={colour} roughness={0.72} />
       </mesh>
 
-      <mesh position={[0, seat.eyeY, 0]} scale={[0.94, 1.06, 0.9]} castShadow>
-        <sphereGeometry args={[HEAD_RADIUS, 18, 14]} />
-        <meshStandardMaterial color="#2b3038" roughness={0.85} />
+      {/*
+        The neck. Without one the head is a ball resting on a shoulder, and
+        the gap the face plane needs in order to show a chin reads as a
+        floating head instead of a person.
+      */}
+      <mesh position={[0, body.neckY, 0]} castShadow>
+        <cylinderGeometry
+          args={[NECK_RADIUS_TOP, NECK_RADIUS_BOTTOM, body.neckHeight, 12]}
+        />
+        <meshStandardMaterial color={headColour} roughness={0.85} />
       </mesh>
+
+      <mesh position={[0, seat.eyeY, 0]} scale={look.headScale} castShadow>
+        <sphereGeometry args={[HEAD_RADIUS, 18, 14]} />
+        <meshStandardMaterial color={headColour} roughness={0.85} />
+      </mesh>
+
+      {/* Hat, antennae or fin. Above the skull or behind it, never across the
+          face plane - see the socket contract in `archetypes.ts`. */}
+      <HeadPieceMesh
+        piece={look.headPiece}
+        headTopY={seat.eyeY + HEAD_RADIUS * look.headScale[1]}
+        colour={colour}
+        accent={away ? AWAY_COLOUR : look.accent}
+      />
 
       {/*
         A three.js object faces its local -Z, so everything inside this group
@@ -270,6 +332,21 @@ export function Avatar({
           )}
         </mesh>
 
+        {look.tie && (
+          // Business dress. Inside the flipped group, so +Z is the direction
+          // this player faces, which is where a tie hangs.
+          <mesh
+            position={[0, body.shoulderY - 0.15, body.chestFrontZ * 0.94]}
+            castShadow
+          >
+            <boxGeometry args={[0.038, 0.17, 0.02]} />
+            <meshStandardMaterial
+              color={away ? AWAY_COLOUR : look.accent}
+              roughness={0.6}
+            />
+          </mesh>
+        )}
+
         <mesh position={[0, NAME_PLATE_Y, 0.24]}>
           <planeGeometry
             args={[NAME_PLATE_HEIGHT * plate.aspect, NAME_PLATE_HEIGHT]}
@@ -284,9 +361,20 @@ export function Avatar({
 
         {micMuted && (
           // Spec section 7: the mute state belongs on the avatar, near the
-          // chest, not only in a HUD nobody is looking at.
-          <mesh position={[0.13, CHEST_Y, 0.2]}>
-            <planeGeometry args={[0.075, 0.075]} />
+          // chest, not only in a HUD nobody is looking at. It rides beside
+          // the name plate, which is what now marks chest height.
+          <mesh
+            position={[
+              -(
+                (NAME_PLATE_HEIGHT * plate.aspect) / 2 +
+                MUTE_GLYPH_GAP +
+                MUTE_GLYPH_SIZE / 2
+              ),
+              NAME_PLATE_Y,
+              0.24,
+            ]}
+          >
+            <planeGeometry args={[MUTE_GLYPH_SIZE, MUTE_GLYPH_SIZE]} />
             <meshBasicMaterial
               map={muteGlyphTexture()}
               transparent

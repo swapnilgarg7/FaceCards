@@ -6,6 +6,7 @@ import {
 } from "@facecards/shared";
 import type { RoomSnapshot, SeatSnapshot } from "../net/useRoom.js";
 import { Kbd } from "./Kbd.js";
+import { TurnClock } from "./TurnClock.js";
 import { useKeybinds } from "./useKeybinds.js";
 
 /**
@@ -101,13 +102,23 @@ export function ActionBar({
     );
     return (
       <div className="actions actions--idle">
+        {/* Someone else's clock. Ambient rather than urgent, but on screen,
+            because "are they still there" is the question the whole table is
+            silently asking - and it is the answer to why the hand is about to
+            move on without them. */}
+        <TurnClock
+          turn={snapshot.turn}
+          actingMs={snapshot.actingMs}
+          mine={false}
+          label={`Time left for ${waitingFor?.displayName ?? "the acting player"}`}
+        />
         <span className="hud__meta">
           {snapshot.phase === TablePhase.Waiting
             ? "Waiting for players"
             : snapshot.phase === TablePhase.Payout
               ? snapshot.lastResult || "Hand over"
               : waitingFor
-                ? `${waitingFor.displayName} to act`
+                ? `${waitingFor.displayName} to act${waitingFor.connected ? "" : " (reconnecting)"}`
                 : "Dealing"}
         </span>
         {/* Waiting for someone else is exactly when there is time to read
@@ -132,6 +143,16 @@ export function ActionBar({
 
   return (
     <div className="actions">
+      {/* Your clock. The server checks for you when checking is free and folds
+          you when it is not, so this is a countdown to a decision being made
+          rather than to being knocked out. */}
+      <TurnClock
+        turn={snapshot.turn}
+        actingMs={snapshot.actingMs}
+        mine
+        label="Your time to act"
+      />
+
       <button className="btn" onClick={() => onAct(turn, PokerAction.Fold)}>
         Fold <Kbd bind="fold" />
       </button>

@@ -4,6 +4,7 @@ import { ACESFilmicToneMapping } from "three";
 import { Avatar } from "../avatars/Avatar.js";
 import type { UseMedia } from "../media/useMedia.js";
 import type { SeatSnapshot } from "../net/useRoom.js";
+import { AttentionDirector, type AttentionPeer } from "./AttentionDirector.js";
 import { PokerTable } from "./PokerTable.js";
 import { SeatedCamera } from "./SeatedCamera.js";
 import { assignSeats, seatLayout } from "./layout.js";
@@ -75,6 +76,15 @@ export function Room3D({
     (mySeatIndex === undefined ? undefined : placed.get(mySeatIndex)) ??
     seatLayout(1)[0]!;
 
+  const others = players.filter((player) => player.sessionId !== sessionId);
+
+  // Where every other head is, for the quality director. Derived from the same
+  // placement the avatars use, so what it upgrades is what you are looking at.
+  const attentionPeers: AttentionPeer[] = others.flatMap((player) => {
+    const seat = placed.get(player.seat);
+    return seat ? [{ peerId: player.sessionId, seat }] : [];
+  });
+
   return (
     <Canvas
       shadows
@@ -100,8 +110,11 @@ export function Room3D({
         sensitivity={sensitivity}
       />
 
-      {players
-        .filter((player) => player.sessionId !== sessionId)
+      {/* Spec sections 6 and 12: the face you turn towards gets the top
+          simulcast layer and the rest step down. Renders nothing. */}
+      <AttentionDirector peers={attentionPeers} setQuality={media.setQuality} />
+
+      {others
         .map((player) => {
           const seat = placed.get(player.seat);
           if (!seat) return null;
@@ -110,6 +123,7 @@ export function Room3D({
               key={player.sessionId}
               seat={seat}
               displayName={player.displayName}
+              avatar={player.avatar}
               peerId={player.sessionId}
               videoEl={media.remotes.get(player.sessionId) ?? null}
               // Their machine measured where their face is and sent it. This
@@ -123,6 +137,9 @@ export function Room3D({
               speaking={media.speaking.has(player.sessionId)}
               micMuted={media.remoteMicMuted.has(player.sessionId)}
               cameraOff={media.remoteCameraOff.has(player.sessionId)}
+              // Their seat is being held through a reconnection window. The
+              // body stays put, drained, so the chair does not read as free.
+              away={!player.connected}
             />
           );
         })}

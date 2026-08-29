@@ -89,6 +89,12 @@ export interface JoinOptions {
   code: string;
   /** Requested display name. The server sanitises and may alter it. */
   displayName?: string;
+  /**
+   * Requested avatar archetype id, from `AVATARS`. A request, like everything
+   * else a client sends: the server validates it against the list it ships and
+   * substitutes one of its own if it does not recognise it.
+   */
+  avatar?: string;
 }
 
 /**

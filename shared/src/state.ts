@@ -55,6 +55,18 @@ export const Player = schema(
     seat: "uint8",
     /** True between a drop and the end of the reconnection window. */
     connected: "boolean",
+    /**
+     * Chosen archetype id, validated against `AVATARS` server-side. Every
+     * client renders this seat's body from it, so an id nobody ships would be
+     * a lookup miss on six machines rather than a cosmetic problem.
+     */
+    avatar: "string",
+    /**
+     * Asked to be dealt out. Public, because at a real table everyone can see
+     * the seat is not in the hand, and because the alternative is six people
+     * waiting on a player who already told the server they were away.
+     */
+    sittingOut: "boolean",
 
     /** Chips behind. Server-owned; a client-supplied balance is never read. */
     stack: "uint32",
@@ -156,6 +168,19 @@ export const PokerState = schema(
     maxRaiseTo: "uint32",
     /** Seat on the clock, or -1. */
     actingSeat: "int8",
+    /**
+     * How long the seat on the clock has to decide, in milliseconds, or 0 when
+     * nobody is on the clock.
+     *
+     * A *duration*, not a deadline, and deliberately so: an absolute server
+     * timestamp would need the two clocks to agree, and they do not. The
+     * client starts its countdown when `turn` changes, which is the moment it
+     * learned about this decision, so the worst case is that its bar is a
+     * network hop behind rather than wrong by whatever the machine's clock
+     * drifted to. The bar is a picture of the server's clock; the server's
+     * clock is the one that acts.
+     */
+    actingMs: "uint32",
     /**
      * Opaque token for the decision currently on the clock.
      *

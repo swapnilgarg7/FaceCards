@@ -225,8 +225,13 @@ Rules correctness, headless first.
 
 ---
 
-### Phase 3: Multiplayer
+### Phase 3: Multiplayer — DONE
 **Spec definition of done:** 3 to 6 players can join, sit, talk and play.
+
+Verified by unit tests, `npm run typecheck`, and `npm run verify:phase3`
+(46 checks against a live server: six clients, a mid-hand drop, a reconnect,
+a sit-out and a six-way privacy sweep), plus `netcode-security` and
+`scene-perf`. See `README.md` for the checklist and the boundaries left open.
 
 **Work**
 - Seat allocation: N fixed seats around the table, auto-assign on join, release on leave. Data-driven layout so 6 seats become 10 without touching scene code.
@@ -240,6 +245,16 @@ Rules correctness, headless first.
 - Six people join from six machines, get seated, see and hear everyone, and play multiple hands.
 - Someone closing their laptop mid-hand does not stall the table. Fold-or-timeout keeps play moving.
 - That person reopening their laptop gets their seat and stack back.
+
+**What the build corrected**
+- **A disconnect is three lifecycle hooks, not one.** Colyseus 0.17 routes an unclean close to `onDrop`, and only calls `onLeave` afterwards if the reconnection deferred rejects. That is what makes `onLeave` the *single* place a player is removed: the consented leave and the expired window both arrive there, so there is one function that frees a seat and one that folds an abandoned hand. Putting `allowReconnection` in `onLeave`, as older tutorials do, gives you two removal paths that have to agree.
+- **Holding a seat means "empty" is no longer "no clients".** A table whose last player dropped has zero clients and one seat still being held. The dispose timer had to start counting `state.players` as well, or the room would throw away the stack and the hand somebody was about to reconnect into.
+- **The reconnection window and the SDK's retry ladder are one mechanism in two halves.** The client retries fifteen times on a doubling backoff capped at five seconds, which comes to about fifty-six seconds — deliberately just inside the server's sixty. The last attempt is therefore made while the seat is still there, and giving up means the network is gone rather than that the client stopped asking early. Its `minUptime` is the one gap: a drop inside the first five seconds is treated as a bad join and never retried.
+- **The action clock has two budgets and one rule.** Time is for thinking, and a chair with nobody in it is not thinking. Thirty seconds connected, five disconnected, re-armed on every connection change rather than fixed when the street opened. A timeout **checks when checking is free** and folds only when staying in would cost chips: folding an absent player out of a pot they are entitled to is a rule invention, not a timeout.
+- **A timed-out decision and a clicked one are the same event.** Both go through one `commit()`, so the turn token, the mirror, the payout and the next deal cannot tell them apart. Two paths into `applyAction` would be two places to forget to bump the token.
+- **`adaptiveStream` cannot see attention.** It picks a layer from each element's size and visibility, and ours are six identically sized panes in a hidden sink. The thing that actually varies is where the head is pointing, which only the scene knows. Hence `AttentionDirector`: the scene measures the angle, `attention.ts` decides the level, and the vendor-neutral `setQuality` applies it. The cones are sized against the real ring — at six players a 30-degree cone would put three faces on the top layer while you sat perfectly still — and a hysteresis band stops a head resting on a boundary renegotiating its layer twice a second.
+- **The avatar library shipped as plumbing, not as art.** An archetype id has to survive the join option, server validation, the schema, the snapshot and the scene, and that is the part phase 5 cannot retrofit cheaply. Procedural hats and fins prove six people can tell each other apart across a table; `archetypes.ts` is the seam the Quaternius meshes drop into, and the face-plane socket is the one thing in it that is not cosmetic.
+- **Permission belongs in the lobby, and must not be a gate.** The prompt is browser chrome that blocks until answered, and the worst moment to meet it is the instant a 3D room finishes loading. Asked before the seat, one click primes and seats — and a refusal still seats you, because watching from the table beats being stuck on a form.
 
 **Traps**
 - Six simultaneous video textures is where the frame budget first bites. Measure now, not in phase 6.

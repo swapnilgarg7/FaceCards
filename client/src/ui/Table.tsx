@@ -31,14 +31,19 @@ export function Table({
   sessionId,
   media,
   rejection,
+  reconnecting,
   onAct,
+  onSitOutChange,
   onLeave,
 }: {
   snapshot: RoomSnapshot;
   sessionId: string | null;
   media: UseMedia;
   rejection: string | null;
+  /** The socket dropped and we are inside the server's grace window. */
+  reconnecting: boolean;
   onAct(turn: number, type: PokerActionType, amount?: number): void;
+  onSitOutChange(sittingOut: boolean): void;
   onLeave(): void;
 }) {
   const me = snapshot.players.find((p) => p.sessionId === sessionId);
@@ -110,7 +115,17 @@ export function Table({
         </div>
       </header>
 
-      {media.audioBlocked && !settingsOpen && (
+      {/* The table stays up while the socket is down, because the seat, the
+          stack and the cards are all still held on the server. What changes is
+          that nothing on screen is being updated any more, and saying so is
+          better than letting a frozen table read as a live one. */}
+      {reconnecting && (
+        <div className="banner banner--error hud__banner" role="status">
+          Connection lost. Holding your seat and reconnecting…
+        </div>
+      )}
+
+      {media.audioBlocked && !settingsOpen && !reconnecting && (
         <button
           className="banner hud__banner"
           onClick={() => void media.startAudio()}
@@ -166,6 +181,8 @@ export function Table({
           shareUrl={shareUrl}
           media={media}
           sensitivity={sensitivity}
+          sittingOut={me?.sittingOut ?? false}
+          onSitOutChange={onSitOutChange}
           onSensitivityChange={setSensitivity}
           onClose={() => setSettingsOpen(false)}
           onLeave={onLeave}

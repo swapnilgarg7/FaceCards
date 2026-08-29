@@ -41,6 +41,9 @@ export function HandHud({
             "hand__seat",
             acting ? "hand__seat--acting" : "",
             player.status === SeatStatus.Folded ? "hand__seat--folded" : "",
+            // A held seat and a folded one look different on purpose: one is
+            // out of this hand, the other may be out of the game.
+            player.connected ? "" : "hand__seat--away",
           ]
             .filter(Boolean)
             .join(" ");
@@ -83,6 +86,15 @@ export function HandHud({
               )}
               {player.stack === 0 && player.status === SeatStatus.Waiting && (
                 <span className="hand__tag">out of chips</span>
+              )}
+              {/* Both are reasons a seat is not in the next deal, and the
+                  difference matters to everyone waiting: one of them is coming
+                  back on their own. */}
+              {!player.connected && (
+                <span className="hand__tag">reconnecting</span>
+              )}
+              {player.connected && player.sittingOut && (
+                <span className="hand__tag">sitting out</span>
               )}
             </li>
           );

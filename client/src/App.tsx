@@ -47,14 +47,23 @@ export default function App() {
     window.history.replaceState(null, "", url);
   };
 
-  if (room.status.kind === "connected" && room.snapshot) {
+  // A reconnecting room still shows the table. The seat, the stack and the
+  // cards are all still ours on the server while its window is open, so
+  // dropping back to the lobby would be a lie about where we are - and would
+  // invite a fresh join that took a new seat and a new thousand chips.
+  const seated =
+    room.status.kind === "connected" || room.status.kind === "reconnecting";
+
+  if (seated && room.snapshot) {
     return (
       <Table
         snapshot={room.snapshot}
         sessionId={room.sessionId}
         media={media}
         rejection={room.rejection}
+        reconnecting={room.status.kind === "reconnecting"}
         onAct={room.act}
+        onSitOutChange={room.setSittingOut}
         onLeave={leave}
       />
     );
@@ -65,8 +74,8 @@ export default function App() {
       busy={room.status.kind === "connecting"}
       error={room.status.kind === "error" ? room.status.message : null}
       initialCode={urlCode}
-      onCreate={(name) => void room.create(name)}
-      onJoin={(code, name) => void room.join(code, name)}
+      onCreate={(name, avatar) => void room.create(name, avatar)}
+      onJoin={(code, name, avatar) => void room.join(code, name, avatar)}
     />
   );
 }

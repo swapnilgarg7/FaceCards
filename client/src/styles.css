@@ -635,3 +635,121 @@ h2 {
 .note--error {
   color: var(--error);
 }
+
+/* --------------------------------------------------------------- phase 3 */
+
+/* The avatar picker. Six at once, because seeing all of them together is how
+   someone picks the one nobody else has taken. */
+.picker {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.picker__legend {
+  padding: 0;
+  color: var(--dim);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.picker__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.picker__option {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas:
+    "swatch label"
+    "swatch blurb";
+  gap: 0 0.55rem;
+  align-items: center;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  cursor: pointer;
+}
+.picker__option--on {
+  border-color: var(--accent);
+  background: rgba(212, 175, 55, 0.1);
+}
+/* The radio itself is redundant next to the highlight, but it stays in the
+   DOM: it is what makes arrow keys move between archetypes. */
+.picker__option input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.picker__option:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.picker__swatch {
+  grid-area: swatch;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 2px solid;
+  border-radius: 50%;
+}
+.picker__label {
+  grid-area: label;
+  font-size: 0.9rem;
+}
+.picker__blurb {
+  grid-area: blurb;
+  color: var(--dim);
+  font-size: 0.72rem;
+}
+.picker:disabled .picker__option {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.lobby__permission {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+}
+.note--ok {
+  color: #7bd88f;
+}
+
+/* The action clock. A picture of the server's clock; see `TurnClock.tsx`.
+   `.actions` is a wrapping flex row, so the clock claims the whole first line
+   and the buttons sit under it rather than beside it. */
+.clock {
+  flex-basis: 100%;
+  width: 100%;
+  height: 3px;
+  margin-bottom: 0.5rem;
+  border-radius: 2px;
+  background: rgba(147, 154, 168, 0.22);
+  overflow: hidden;
+}
+.clock--mine {
+  height: 5px;
+}
+.clock__fill {
+  width: 100%;
+  height: 100%;
+  /* Drains from the right, which is the direction time is read in. */
+  transform-origin: left center;
+  background: var(--dim);
+}
+.clock--mine .clock__fill {
+  background: var(--accent);
+}
+.clock__fill[data-low="true"] {
+  background: var(--error);
+}
+
+/* A seat being held through a reconnection window. Dimmer than folded,
+   because folded is out of a hand and this may be out of the evening. */
+.hand__seat--away {
+  opacity: 0.45;
+  border-left-color: var(--error);
+}

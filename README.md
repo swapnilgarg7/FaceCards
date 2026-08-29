@@ -10,10 +10,12 @@ head, talking over live voice.
 - Pinned versions and the reasoning behind each: `docs/TECH-DECISIONS.md`
 - Working agreements for day-to-day changes: `CLAUDE.md`
 
-**Phase 0 (technical spike) and phase 2 (poker prototype) are complete.** The
-server runs a full authoritative Hold'em game and the client renders it through
-a deliberately plain HUD; cards and chips become physical objects in phase 4
-and get their art in phase 5, so ugly is still correct here.
+**Phases 0 (technical spike), 2 (poker prototype) and 3 (multiplayer) are
+complete.** The server runs a full authoritative Hold'em game for two to six
+players, holds a dropped player's seat while they reconnect, and keeps the hand
+moving on a clock when nobody answers. The client renders it through a
+deliberately plain HUD; cards and chips become physical objects in phase 4 and
+get their art in phase 5, so ugly is still correct here.
 
 Phase 1's scene, seated camera and webcam-face pipeline are built, but its exit
 criteria are the ones only a person can sign off — eye-line, and five minutes
@@ -40,6 +42,8 @@ credentials match `docker/livekit/livekit.yaml` and are not secret; production
 values come from LiveKit Cloud or your own host and live only in the server's
 environment.
 
+Deploying to LiveKit Cloud and Render: `docs/DEPLOYMENT.md`.
+
 ## Commands
 
 | | |
@@ -49,6 +53,7 @@ environment.
 | `npm test` | Unit tests (vitest) |
 | `npm run verify:phase0` | Plumbing check against a running stack |
 | `npm run verify:phase2` | Plays a full hand against a running stack |
+| `npm run verify:phase3` | Six clients, a drop, a reconnect, and a sit-out |
 | `npm run build` | Production client bundle |
 | `npm run livekit:up` / `:down` / `:logs` | Local SFU |
 
@@ -64,6 +69,14 @@ complete hand — blinds, a raise, all four streets, showdown, payout, and the
 next hand dealing itself — and it snapshots every state frame either client
 ever received to assert that no opponent hole card, no deck stub and no burn
 card appeared in any of them before the showdown published them deliberately.
+
+`npm run verify:phase3` needs only `npm run dev`, and takes about a minute.
+Six headless clients fill a table; one of them has its socket closed without a
+leave message in the middle of a hand, and the script asserts that the table
+moved on inside the short clock, that the seat, the stack and *only that
+client's own* cards came back on reconnect, and that no client ever received
+another player's card across six sets of hole cards. It also covers avatar
+validation, sitting out and sitting back in.
 
 ## Troubleshooting
 
@@ -185,14 +198,62 @@ Known boundaries left to later phases, on purpose:
   leave-and-rejoin a free rebuy. Fixing it properly means keying stacks to a
   stable identity, which is the same change phase 3 needs for reconnection.
 - No action timer: an idle player holds the hand open. Phase 3.
-- A mid-hand disconnect folds the seat rather than holding it. An all-in seat is
-  left alone (its chips already bought a claim on the pot), but its winnings
-  leave the table with it.
 - No rate limiting on room creation, room-code lookup or actions, and the room
   code is ~29 bits. It is the only thing guarding a room, and a room is a live
   webcam and voice call — see the security pass in phase 6.
 - Nothing enforces `wss:`/`https:` in production builds. Over plaintext the
   per-client `StateView` buys nothing, so this gates any real deployment.
 
-Next: **phase 3, multiplayer** — 3 to 6 players, lobby flow, avatar library,
-reconnection, and video scaling. See `plan.md`.
+(The mid-hand-disconnect boundary listed here through phase 2 is closed by
+phase 3's reconnection window, below.)
+
+## Phase 3 status
+
+Verified by unit tests, `npm run typecheck`, and `npm run verify:phase3`
+(46 checks against a live server), plus `netcode-security` and `scene-perf`.
+
+- [x] Six clients fill a table, every seat index distinct, a seventh refused.
+      Seat *placement* is derived from who is actually present
+      (`client/src/scene/layout.ts`), so two players sit opposite rather than
+      taking the first two slots of a table built for six, and raising
+      `MAX_PLAYERS` to ten needs no scene change
+- [x] Lobby flow: invite link, display name, avatar picker, camera and mic
+      permission, seated. Permission is primed in the lobby rather than met on
+      arrival in a 3D room, and a refusal seats you anyway
+- [x] Six archetypes — cowboy, businessman, gentleman, wizard, alien, shark —
+      defined once in `shared/src/avatars.ts`, validated server-side, and drawn
+      through one lookup that keeps the face-plane socket archetype-agnostic.
+      **Procedural, not modelled**: phase 3 owns the plumbing an id travels
+      through, phase 5 swaps the primitives for the Quaternius bodies, and no
+      asset means no row in `docs/ASSET-CREDITS.md` yet
+- [x] Multi-way play: turn order around the ring, button and blinds moving,
+      sit-out and sit-in that take effect at the next deal and never mid-hand
+- [x] **A dropped player keeps their seat, their stack and their own cards** for
+      `RECONNECT_GRACE_MS`. `onDrop` holds it, `onReconnect` gives it back, and
+      `onLeave` is the single place a player is ever removed
+- [x] **A closed laptop does not stall the table.** The action clock is
+      server-side: thirty seconds for a player who is there, five for a chair
+      nobody is in, and on timeout the server checks when checking is free and
+      folds only when staying in would cost chips
+- [x] Video scaling: `adaptiveStream` and simulcast as the baseline, plus
+      explicit per-peer quality driven by camera yaw. At six players sitting
+      still, one face is on the top layer and two are on the bottom
+      (`client/src/scene/attention.test.ts` asserts that profile)
+- [x] No opponent hole card in any state frame any of six clients ever
+      received, including across the reconnection
+
+Known boundaries left to later phases, on purpose:
+
+- **Leaving on purpose still gives up the stack.** Rejoining is a fresh 1000,
+  so leave-and-rejoin remains a free rebuy. Reconnection keys stacks to a
+  session that survives a *drop*; surviving a deliberate leave needs an
+  identity that outlives the session, which is a phase 7 account question.
+- The client SDK does not retry a drop that happens inside the first five
+  seconds of a session (its own `minUptime`), so a laptop closed immediately
+  after sitting down is a real leave.
+- No rebuy, so a table still stalls once someone busts.
+- An all-in seat whose player leaves for good still reaches the showdown in the
+  engine but has no seat to publish it against, so its winnings leave with it.
+
+Next: **phase 4, physical interaction** — cards you pick up and peek at, a deal
+animation, chips as one `InstancedMesh`, and sound. See `plan.md`.

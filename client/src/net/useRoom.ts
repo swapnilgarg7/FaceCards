@@ -30,8 +30,13 @@ import { createRoom, joinRoom, type PokerRoom } from "./client.js";
 export interface SeatSnapshot {
   sessionId: string;
   displayName: string;
+  /** Archetype id. Validated server-side; resolved by `avatars/archetypes.ts`. */
+  avatar: string;
   seat: number;
+  /** False while this seat is being held open through a reconnection window. */
   connected: boolean;
+  /** Asked to be dealt out. Takes effect at the next deal, never mid-hand. */
+  sittingOut: boolean;
   stack: number;
   bet: number;
   status: SeatStatusValue;
@@ -71,6 +76,14 @@ export interface RoomSnapshot {
   minRaiseTo: number;
   maxRaiseTo: number;
   actingSeat: number;
+  /**
+   * How long the seat on the clock has, in milliseconds, or 0 for nobody.
+   *
+   * A budget, not a deadline: the countdown starts when `turn` changes, which
+   * is when this client learned about the decision. See the note on the field
+   * in `shared/src/state.ts` for why it is not a timestamp.
+   */
+  actingMs: number;
   /** Opaque token for the decision on the clock. Echoed back with an intent. */
   turn: number;
   buttonSeat: number;
@@ -86,6 +99,14 @@ export type RoomStatus =
   | { kind: "idle" }
   | { kind: "connecting" }
   | { kind: "connected" }
+  /**
+   * The socket dropped and the SDK is retrying. Deliberately *not* an error
+   * and deliberately not "idle": the seat, the stack and the cards are all
+   * still ours on the server for the length of its reconnection window, so
+   * the table stays on screen with a banner over it rather than collapsing
+   * back to a lobby that would take a new seat and a fresh 1000 chips.
+   */
+  | { kind: "reconnecting" }
   | { kind: "error"; message: string };
 
 export interface UseRoom {
@@ -95,9 +116,11 @@ export interface UseRoom {
   mediaToken: MediaTokenPayload | null;
   /** Last illegal action the server bounced, for a one-line explanation. */
   rejection: string | null;
-  create(displayName: string): Promise<void>;
-  join(code: string, displayName: string): Promise<void>;
+  create(displayName: string, avatar: string): Promise<void>;
+  join(code: string, displayName: string, avatar: string): Promise<void>;
   act(turn: number, type: PokerActionType, amount?: number): void;
+  /** Deal me out from the next hand, or back in. Never affects a live hand. */
+  setSittingOut(sittingOut: boolean): void;
   leave(): Promise<void>;
 }
 
@@ -121,8 +144,10 @@ function snapshotOf(room: PokerRoom): RoomSnapshot | null {
     players.push({
       sessionId: player.sessionId,
       displayName: player.displayName,
+      avatar: player.avatar,
       seat: player.seat,
       connected: player.connected,
+      sittingOut: player.sittingOut,
       stack: player.stack,
       bet: player.bet,
       status: player.status as SeatStatusValue,
@@ -162,6 +187,7 @@ function snapshotOf(room: PokerRoom): RoomSnapshot | null {
     minRaiseTo: state.minRaiseTo,
     maxRaiseTo: state.maxRaiseTo,
     actingSeat: state.actingSeat,
+    actingMs: state.actingMs,
     turn: state.turn,
     buttonSeat: state.buttonSeat,
     smallBlind: state.smallBlind,
@@ -203,6 +229,27 @@ export function useRoom(): UseRoom {
       setStatus({ kind: "error", message: `${message ?? "Room error"} (${code})` });
     });
 
+    // The socket died but the SDK will keep trying, and the server is holding
+    // the seat open for `RECONNECT_GRACE_MS` while it does. Nothing is torn
+    // down here: the last snapshot stays on screen under a banner, because it
+    // is still an accurate picture of a table we are still sitting at.
+    //
+    // The SDK's own retry ladder is left at its defaults deliberately. Fifteen
+    // attempts on a doubling backoff capped at five seconds comes to about
+    // fifty-six seconds, which lands just inside the server's sixty-second
+    // window - so the last attempt is made while the seat is still there, and
+    // giving up means the network is gone rather than that we stopped asking
+    // too early. Its `minUptime` is the one gap: a drop inside the first five
+    // seconds of a session is treated as a bad join and not retried at all.
+    room.onDrop(() => setStatus({ kind: "reconnecting" }));
+
+    room.onReconnect(() => {
+      setStatus({ kind: "connected" });
+      // The full state arrives with the rejoin, own hole cards included: the
+      // server re-grants the view before it sends it.
+      setSnapshot(snapshotOf(room));
+    });
+
     room.onLeave(() => {
       roomRef.current = null;
       setStatus({ kind: "idle" });
@@ -216,10 +263,10 @@ export function useRoom(): UseRoom {
   }, []);
 
   const join = useCallback(
-    async (code: string, displayName: string) => {
+    async (code: string, displayName: string, avatar: string) => {
       setStatus({ kind: "connecting" });
       try {
-        attach(await joinRoom({ code, displayName }));
+        attach(await joinRoom({ code, displayName, avatar }));
       } catch (err) {
         setStatus({
           kind: "error",
@@ -231,13 +278,13 @@ export function useRoom(): UseRoom {
   );
 
   const create = useCallback(
-    async (displayName: string) => {
+    async (displayName: string, avatar: string) => {
       setStatus({ kind: "connecting" });
       try {
         // Two steps on purpose: the server mints the code, then we join it
         // like any other guest would. There is no privileged create path.
         const code = await createRoom();
-        attach(await joinRoom({ code, displayName }));
+        attach(await joinRoom({ code, displayName, avatar }));
       } catch (err) {
         setStatus({
           kind: "error",
@@ -263,6 +310,15 @@ export function useRoom(): UseRoom {
     },
     [],
   );
+
+  const setSittingOut = useCallback((sittingOut: boolean) => {
+    // An intent like any other. The server decides when it takes effect, which
+    // is at the next deal and never in the middle of a hand you are already
+    // contesting.
+    roomRef.current?.send(
+      sittingOut ? ClientMessage.SitOut : ClientMessage.SitIn,
+    );
+  }, []);
 
   const leave = useCallback(async () => {
     await roomRef.current?.leave();
@@ -292,6 +348,7 @@ export function useRoom(): UseRoom {
     create,
     join,
     act,
+    setSittingOut,
     leave,
   };
 }
