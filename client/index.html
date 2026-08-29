@@ -2,8 +2,25 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      `viewport-fit=cover` lets the room run under the notch and the home
+      indicator, which is the whole point of a full-bleed 3D scene on a phone.
+      Every HUD edge pays for it back with `env(safe-area-inset-*)` in
+      styles.css, so nothing readable ever ends up under the hardware.
+    -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
     <meta name="color-scheme" content="dark" />
+    <!-- The browser chrome, painted the colour of the room behind the HUD. -->
+    <meta name="theme-color" content="#12080f" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
     <meta
       name="description"
       content="Virtual poker night: live faces, real chips, one table."

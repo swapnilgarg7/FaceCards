@@ -385,9 +385,13 @@ export function Avatar({
           <planeGeometry args={[TURN_MARKER_SIZE, TURN_MARKER_SIZE]} />
           <meshBasicMaterial
             ref={markerMatRef}
-            // The same brass as the acting plaque on the rail and the acting
-            // row in the standings. One state, one colour.
-            color="#f2d68c"
+            // Red, and deliberately not the brass the acting plaque and the
+            // acting row in the standings share. Everything lighting this
+            // room is warm amber, so a brass caret over a head was one more
+            // warm thing among many and had to be looked for; the one cue a
+            // player has to catch from across the table without hunting is
+            // the only place worth breaking the one-state-one-colour rule.
+            color="#ff3d3d"
             alphaMap={turnMask}
             transparent
             opacity={0}

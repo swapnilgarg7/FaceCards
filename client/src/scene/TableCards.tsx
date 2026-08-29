@@ -51,6 +51,12 @@ export interface TableCardsProps {
   peeking: boolean;
   /** Press and hold on your own cards: the other half of the peek. */
   onPeekChange(peeking: boolean): void;
+  /**
+   * Whether the invisible press-and-hold pad over this seat's own cards is
+   * offered at all. False on a touchscreen, where the same press is already
+   * the drag that turns the head.
+   */
+  peekPad?: boolean;
 }
 
 export function TableCards({
@@ -59,6 +65,7 @@ export function TableCards({
   sessionId,
   peeking,
   onPeekChange,
+  peekPad = true,
 }: TableCardsProps) {
   const button = placed.get(snapshot.buttonSeat);
   const deck = useMemo(() => deckSpot(button), [button]);
@@ -218,7 +225,7 @@ export function TableCards({
           the pair rather than the cards themselves, because the cards move
           when you pick them up, and a hit target that runs away mid-gesture
           is a hit target you lose halfway through it. */}
-      {me && me.cardCount > 0 && mySeat && (
+      {peekPad && me && me.cardCount > 0 && mySeat && (
         <PeekPad seat={mySeat} active={peeking} onPeekChange={onPeekChange} />
       )}
     </group>

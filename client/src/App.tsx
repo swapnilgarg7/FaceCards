@@ -3,6 +3,7 @@ import { useMedia } from "./media/useMedia.js";
 import { useRoom } from "./net/useRoom.js";
 import { Lobby } from "./ui/Lobby.js";
 import { Table } from "./ui/Table.js";
+import { ViewportProvider, useViewport } from "./ui/useViewport.js";
 
 /**
  * Phase-0 shell: lobby until connected, then the table.
@@ -12,6 +13,10 @@ import { Table } from "./ui/Table.js";
  */
 export default function App() {
   const room = useRoom();
+  // Measured once for the whole app, and stamped onto the document element so
+  // the stylesheet answers the same question the components do. See
+  // `ui/viewport.ts` for what compact and touch each mean.
+  const view = useViewport();
   // Media credentials come from the game server over the authoritative socket,
   // minted against this client's session id. The client never states who it is.
   const media = useMedia(room.mediaToken);
@@ -56,6 +61,7 @@ export default function App() {
 
   if (seated && room.snapshot) {
     return (
+      <ViewportProvider value={view}>
       <Table
         snapshot={room.snapshot}
         sessionId={room.sessionId}
@@ -69,16 +75,19 @@ export default function App() {
         onBuyIn={room.buyIn}
         onLeave={leave}
       />
+      </ViewportProvider>
     );
   }
 
   return (
-    <Lobby
+    <ViewportProvider value={view}>
+      <Lobby
       busy={room.status.kind === "connecting"}
       error={room.status.kind === "error" ? room.status.message : null}
       initialCode={urlCode}
       onCreate={(name, avatar) => void room.create(name, avatar)}
       onJoin={(code, name, avatar) => void room.join(code, name, avatar)}
-    />
+      />
+    </ViewportProvider>
   );
 }

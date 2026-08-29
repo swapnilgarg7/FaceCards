@@ -23,6 +23,7 @@ import { VideoTile } from "./VideoTile.js";
 import { useChipPush } from "./useChipPush.js";
 import { useHoldKeybind, useKeybinds } from "./useKeybinds.js";
 import { useLookKeys } from "./useLookKeys.js";
+import { useView } from "./useViewport.js";
 
 /**
  * The table: a full-bleed 3D room with a thin HUD floating over it.
@@ -37,6 +38,18 @@ import { useLookKeys } from "./useLookKeys.js";
  * every trip to a button turns your head on the way; the buttons stay as a
  * visible fallback and as the place the shortcuts are advertised, but the keys
  * are the intended path. See `keybinds.ts`.
+ *
+ * **On a phone that sentence is false, and the HUD is rebuilt around it being
+ * false.** There is no keyboard to be the intended path and no hover to drive
+ * the camera, so the buttons stop being a fallback and become the whole
+ * interface - which means everything that existed only to teach the keyboard
+ * has to go, or the one screen small enough to need the space is the one
+ * carrying the most furniture. What comes off, in order of how much room it
+ * buys back: the standings column (a sheet you open, because the buy-in
+ * control lives in it and a busted player still has to reach it), the key
+ * chips on every control, the peek hint and the press-and-hold gesture it
+ * describes, the chip push, and the always-live shortcut strip. What is left
+ * is a room, your own two cards, and three buttons the size of a thumb.
  */
 export function Table({
   snapshot,
@@ -67,6 +80,7 @@ export function Table({
   onBuyIn(amount: number): void;
   onLeave(): void;
 }) {
+  const view = useView();
   const me = snapshot.players.find((p) => p.sessionId === sessionId);
   // Whether the evening has begun. Until it has, the bottom of the screen
   // belongs to Play rather than to Fold/Check/Raise.
@@ -95,7 +109,12 @@ export function Table({
   const push = useChipPush({
     snapshot,
     me,
-    enabled: !settingsOpen,
+    // Off on a touchscreen. The push is a press and a drag on the felt, which
+    // is the same finger movement that turns the head, and a gesture that
+    // might mean either is a gesture that will one day call a bet when
+    // somebody meant to look at the player opposite. The action bar sizes a
+    // raise perfectly well and cannot be misread.
+    enabled: !settingsOpen && !view.touch,
     onAct,
     onDetent: useCallback(
       () => audio.play("clink", 0, 0.45),
@@ -162,8 +181,12 @@ export function Table({
           peeking={peeking}
           onPeekChange={changePeek}
           betPreview={push.preview}
-          canPushChips={!settingsOpen && push.rungCount > 0}
+          canPushChips={!settingsOpen && !view.touch && push.rungCount > 0}
           onChipGrab={push.begin}
+          // A finger has no position until it is down, so it cannot point at
+          // anything. Drag to turn instead. See `scene/mobileView.ts`.
+          lookMode={view.touch ? "drag" : "hover"}
+          lite={view.handheld}
         />
       </div>
 
@@ -171,37 +194,88 @@ export function Table({
         <div className="hud__group hud__group--stacked">
           <div className="hud__group">
             <span className="hud__code">{snapshot.code}</span>
-            <span className="hud__meta">
-              {snapshot.players.length}/{MAX_PLAYERS} seated · {media.state}
-            </span>
+            {/* Who is here and whether the media is up. Off on a small
+                screen: the standings sheet answers the first properly and the
+                reconnect banner answers the second louder, and neither is
+                worth the width next to a room code that has to stay readable
+                enough to say out loud. */}
+            {!view.compact && (
+              <span className="hud__meta">
+                {snapshot.players.length}/{MAX_PLAYERS} seated · {media.state}
+              </span>
+            )}
           </div>
           {/* The keys that are always live and belong to the room rather than
               to a decision. The ones that depend on whose turn it is are
               printed on the action buttons instead, where they mean
               something, and the peek lives over the cards it lifts. */}
-          <div className="hud__keys">
-            <Kbd bind="lookUp" />
-            <Kbd bind="lookLeft" />
-            <Kbd bind="lookDown" />
-            <Kbd bind="lookRight" /> look around
-            <Kbd bind="standings" /> standings
-            <Kbd bind="settings" /> settings
-            <Kbd bind="mute" /> {media.micMuted ? "unmute" : "mute"}
-            <Kbd bind="camera" /> camera
-          </div>
+          {!view.touch && (
+            <div className="hud__keys">
+              <Kbd bind="lookUp" />
+              <Kbd bind="lookLeft" />
+              <Kbd bind="lookDown" />
+              <Kbd bind="lookRight" /> look around
+              <Kbd bind="standings" /> standings
+              <Kbd bind="settings" /> settings
+              <Kbd bind="mute" /> {media.micMuted ? "unmute" : "mute"}
+              <Kbd bind="camera" /> camera
+            </div>
+          )}
         </div>
 
-        <div className="hud__group">
+        <div className="hud__group hud__group--controls">
           {/* Mute and camera stay out here as well as in the menu: they are
-              the two things someone reaches for mid-sentence. */}
-          <button className="btn" onClick={() => void media.toggleMic()}>
-            {media.micMuted ? "Unmute" : "Mute"} <Kbd bind="mute" />
+              the two things someone reaches for mid-sentence. The labels
+              shorten rather than turning into icons - a row of unlabelled
+              glyphs is a quiz, and "Mic off" is three characters wider than a
+              crossed-out microphone and infinitely less ambiguous. */}
+          <button
+            className="btn"
+            onClick={() => void media.toggleMic()}
+            aria-label={media.micMuted ? "Unmute" : "Mute"}
+          >
+            {view.compact
+              ? media.micMuted
+                ? "Mic off"
+                : "Mic"
+              : media.micMuted
+                ? "Unmute"
+                : "Mute"}{" "}
+            <Kbd bind="mute" />
           </button>
-          <button className="btn" onClick={() => void media.toggleCamera()}>
-            {media.cameraOff ? "Camera on" : "Camera off"} <Kbd bind="camera" />
+          <button
+            className="btn"
+            onClick={() => void media.toggleCamera()}
+            aria-label={media.cameraOff ? "Turn camera on" : "Turn camera off"}
+          >
+            {view.compact
+              ? media.cameraOff
+                ? "Cam off"
+                : "Cam"
+              : media.cameraOff
+                ? "Camera on"
+                : "Camera off"}{" "}
+            <Kbd bind="camera" />
           </button>
-          <button className="btn" onClick={() => setSettingsOpen(true)}>
-            Settings <Kbd bind="settings" />
+          {/* The way back to the standings once the column has become a
+              sheet. On a wide screen the column is simply there, and its own
+              peg is the way back, so this would be a second answer to a
+              question that already has one. */}
+          {view.compact && (
+            <button
+              className="btn"
+              onClick={() => changeStandings(!standingsOpen)}
+              aria-expanded={standingsOpen}
+            >
+              Chips
+            </button>
+          )}
+          <button
+            className="btn"
+            onClick={() => setSettingsOpen(true)}
+            aria-label="Settings"
+          >
+            {view.compact ? "Menu" : "Settings"} <Kbd bind="settings" />
           </button>
         </div>
       </header>
@@ -221,7 +295,7 @@ export function Table({
           className="banner hud__banner"
           onClick={() => void media.startAudio()}
         >
-          Click to enable sound
+          {view.touch ? "Tap to enable sound" : "Click to enable sound"}
         </button>
       )}
 
@@ -251,18 +325,27 @@ export function Table({
           of your own two cards has moved down to the footer - directly over
           the cards it is a fallback for, rather than in the far corner of the
           screen from them. */}
-      <div
-        className={`hud hud--table${standingsOpen ? "" : " hud--table-away"}`}
-      >
-        <Leaderboard
-          snapshot={snapshot}
-          sessionId={sessionId}
-          me={me}
-          open={standingsOpen}
-          onOpenChange={changeStandings}
-          onBuyIn={onBuyIn}
-        />
-      </div>
+      {/* On a small screen this stops being a column and becomes a sheet you
+          open over the room, from the Chips button in the top bar. It is not
+          simply dropped, and the reason is the buy-in control at the bottom of
+          it: a player who has just lost their last chip has exactly one thing
+          left to do, and no other surface in the product does it. Closed, it
+          renders nothing at all rather than leaving its peg over the felt,
+          because at this size the peg is a hole in the table. */}
+      {(!view.compact || standingsOpen) && (
+        <div
+          className={`hud hud--table${standingsOpen ? "" : " hud--table-away"}`}
+        >
+          <Leaderboard
+            snapshot={snapshot}
+            sessionId={sessionId}
+            me={me}
+            open={standingsOpen}
+            onOpenChange={changeStandings}
+            onBuyIn={onBuyIn}
+          />
+        </div>
+      )}
 
       {/* The push, while it is happening. The chips in front of your seat are
           already showing the amount; this says what letting go will do, which
@@ -285,7 +368,14 @@ export function Table({
           clock sits under it where a player's eyes already are. */}
       <footer className="hud hud--bottom">
         <HandHud snapshot={snapshot} me={me} />
-        <PeekHint hasCards={!!me && me.cardCount > 0} peeking={peeking} />
+        {/* The hint, and the gesture it describes, are both gone on a
+            touchscreen: there is no key to hold and the press it would take
+            instead is the one that turns your head. The two cards in the
+            readout above are already face up, which on a phone is the whole
+            of "look at your hand". */}
+        {!view.touch && (
+          <PeekHint hasCards={!!me && me.cardCount > 0} peeking={peeking} />
+        )}
         {gate.show ? (
           <PlayGate
             gate={gate}

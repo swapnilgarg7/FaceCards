@@ -1911,3 +1911,349 @@ h2 {
     animation-duration: 1ms;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Phones, and anything else short of room.
+
+   Two attributes, stamped on the document element by `ui/useViewport.ts`, and
+   deliberately *not* a pair of media queries: the components make the same two
+   decisions in JavaScript - whether to render the standings column, whether to
+   print a key chip, whether the camera follows a cursor or a drag - and a
+   breakpoint written down twice is a breakpoint that will disagree with itself
+   the first time one of the two is edited. `ui/viewport.ts` holds the only
+   copy of the numbers.
+
+   - `[data-compact="true"]`  no room. Re-lay the HUD out, smaller. True of a
+     phone and equally true of a desktop window dragged narrow.
+   - `[data-touch="true"]`    a finger, no hover, no keyboard. True of a phone
+     and equally true of a tablet with a whole screen to spare.
+
+   The principle is unchanged from the desktop HUD, and is why this section can
+   be as short as it is: **the faces are the product.** Everything taken away
+   below was teaching or decorating rather than answering a question the player
+   has right now, and on a 390-pixel screen the room wins every one of those
+   arguments.
+   ------------------------------------------------------------------------- */
+
+/* The room is a fixed surface, not a document. Nothing rubber-bands and
+   nothing pulls to refresh. */
+html,
+body {
+  overscroll-behavior: none;
+}
+
+/* Every control is a tap target: no 300ms wait for a double-tap that is never
+   coming, and no grey flash on the way. Applied everywhere rather than under
+   an attribute, because a hybrid laptop is touched without ever reporting a
+   coarse pointer. */
+.btn,
+button,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* `inset: 0` on a fixed element measures the layout viewport, which on iOS
+   includes the strip behind the URL bar - so the action bar spends its life
+   just off the bottom of the screen. `dvh` is the visible height, and on a
+   positioned element a height beats a `bottom`. */
+@supports (height: 100dvh) {
+  .room {
+    height: 100dvh;
+  }
+}
+
+/* ---- Compact: the HUD, laid out again ---- */
+
+:root[data-compact="true"] .lobby {
+  margin: 0 auto;
+  padding: calc(1.4rem + env(safe-area-inset-top)) 1.1rem
+    calc(1.6rem + env(safe-area-inset-bottom));
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+:root[data-compact="true"] h1 {
+  font-size: 1.6rem;
+}
+/* 16px, and it has to be exactly that: Safari zooms the whole page the moment
+   a focused field is smaller, and a page zoomed into a text input is a page
+   that never quite comes back. */
+:root[data-compact="true"] .field input,
+:root[data-compact="true"] .sizer__amount,
+:root[data-compact="true"] .board__buyin-amount {
+  font-size: 16px;
+}
+:root[data-compact="true"] .field input {
+  padding: 0.75rem 0.8rem;
+}
+
+:root[data-compact="true"] .hud--top {
+  padding: calc(0.5rem + env(safe-area-inset-top))
+    calc(0.6rem + env(safe-area-inset-right)) 0.5rem
+    calc(0.6rem + env(safe-area-inset-left));
+  gap: 0.4rem;
+  align-items: flex-start;
+}
+:root[data-compact="true"] .hud__code {
+  padding: 0.24rem 0.5rem 0.18rem;
+  font-size: 1.02rem;
+  letter-spacing: 0.16em;
+  text-indent: 0.16em;
+}
+:root[data-compact="true"] .hud__group--controls {
+  gap: 0.3rem;
+  justify-content: flex-end;
+}
+:root[data-compact="true"] .hud .btn {
+  padding: 0.5rem 0.55rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  /* The reason the labels shrank rather than the box: a control small enough
+     to miss is a control pressed twice, and one of these mutes you. */
+  min-height: 2.4rem;
+}
+/* Under everything rather than under the top strip: at this width the strip is
+   where the room code and four controls already are. */
+:root[data-compact="true"] .hud__banner {
+  top: auto;
+  bottom: calc(0.6rem + env(safe-area-inset-bottom));
+  width: calc(100% - 1.6rem);
+  max-width: 24rem;
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+/* Your own face, small, out of the corner the action bar wants. It stays on
+   screen at every size, because framing yourself is what makes the crop on
+   everybody else's avatar look right: it is the one piece of HUD that is
+   doing its work for other people. */
+:root[data-compact="true"] .hud--self {
+  top: calc(3.5rem + env(safe-area-inset-top));
+  right: calc(0.6rem + env(safe-area-inset-right));
+  bottom: auto;
+  width: 5.5rem;
+}
+:root[data-compact="true"] .hud--self .tile {
+  border-width: 1px;
+}
+:root[data-compact="true"] .hud--self .tile__label {
+  padding: 0.2rem 0.35rem;
+  font-size: 0.62rem;
+}
+
+/* The standings, as a sheet rather than a column: opened from Chips in the top
+   strip, closed by the same Hide control it always had. Full-bleed, because a
+   centred card at this width is the screen with a margin around it. */
+:root[data-compact="true"] .hud--table {
+  inset: 0;
+  width: auto;
+  z-index: 30;
+  padding: calc(3.6rem + env(safe-area-inset-top)) 0.75rem
+    calc(1rem + env(safe-area-inset-bottom));
+  background: rgba(9, 4, 8, 0.74);
+  backdrop-filter: blur(8px);
+  /* The scrim takes the touch here, unlike the desktop column: over a
+     full-screen sheet, a press falling through to the felt would turn the head
+     behind a panel somebody is reading. */
+  pointer-events: auto;
+  align-items: flex-start;
+}
+:root[data-compact="true"] .board {
+  width: 100%;
+  max-width: 30rem;
+  margin: 0 auto;
+}
+:root[data-compact="true"] .board__hide {
+  padding: 0.45rem 0.6rem;
+  border-color: var(--line);
+  color: var(--text);
+}
+:root[data-compact="true"] .board__buyin-row .btn,
+:root[data-compact="true"] .board__buyin-row--commit .btn--primary {
+  min-height: 2.6rem;
+}
+
+/* The decision, across the whole width. The standings column and the self-view
+   are both out of the way at this size, so the inset that kept the three of
+   them apart is now an inset from nothing. */
+:root[data-compact="true"] .hud--bottom {
+  left: calc(0.5rem + env(safe-area-inset-left));
+  right: calc(0.5rem + env(safe-area-inset-right));
+  bottom: calc(0.5rem + env(safe-area-inset-bottom));
+  gap: 0.4rem;
+}
+:root[data-compact="true"] .actions,
+:root[data-compact="true"] .actions__buttons,
+:root[data-compact="true"] .sizer {
+  width: 100%;
+}
+/* Three buttons, one row, thumb-sized. They share the width rather than
+   wrapping, because Fold landing on its own line under Call is how a fold gets
+   pressed by somebody reaching for a call. */
+:root[data-compact="true"] .actions__buttons {
+  flex-wrap: nowrap;
+  gap: 0.4rem;
+}
+:root[data-compact="true"] .btn--act {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 3.2rem;
+  padding: 0.6rem 0.3rem;
+  font-size: 0.8rem;
+  letter-spacing: 0.03em;
+}
+:root[data-compact="true"] .btn__label {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+:root[data-compact="true"] .btn__label b {
+  display: block;
+  font-size: 1.05rem;
+}
+:root[data-compact="true"] .sizer {
+  gap: 0.4rem;
+  padding: 0.4rem 0.55rem;
+}
+:root[data-compact="true"] .sizer__field {
+  width: 100%;
+  justify-content: center;
+}
+:root[data-compact="true"] .sizer__amount {
+  width: 6rem;
+  padding: 0.3rem 0.4rem;
+}
+:root[data-compact="true"] .sizer__slider {
+  width: 100%;
+}
+:root[data-compact="true"] .sizer__quick {
+  width: 100%;
+  justify-content: center;
+}
+:root[data-compact="true"] .btn--quick {
+  min-height: 2.3rem;
+}
+:root[data-compact="true"] .actions--idle {
+  gap: 0.5rem;
+  min-height: 0;
+}
+:root[data-compact="true"] .actions--idle .hud__meta {
+  font-size: 0.74rem;
+}
+
+/* The two cards, bigger. On a desktop this row is a fallback - the real pair
+   is on the felt and there is a gesture for lifting it. On a phone there is no
+   gesture and this *is* the hand, so it is drawn at the size of something a
+   player reads rather than glances at. */
+:root[data-compact="true"] .hand {
+  max-width: 100%;
+}
+:root[data-compact="true"] .hand__board {
+  gap: 0.5rem;
+  padding: 0.25rem 0.65rem;
+}
+:root[data-compact="true"] .hand__mine .card {
+  min-width: 2.2rem;
+  height: 2.9rem;
+  font-size: 1.05rem;
+}
+
+:root[data-compact="true"] .gate {
+  width: 100%;
+}
+:root[data-compact="true"] .btn--play {
+  width: 100%;
+  min-height: 3.2rem;
+}
+
+/* The two full-screen panels. Both were centred cards on a desktop; at this
+   width a centred card is the screen with a margin, so they become the
+   screen. */
+:root[data-compact="true"] .settings {
+  padding: 0;
+}
+:root[data-compact="true"] .settings__panel {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  padding: calc(1rem + env(safe-area-inset-top)) 1rem
+    calc(1.5rem + env(safe-area-inset-bottom));
+  border: 0;
+  border-radius: 0;
+}
+:root[data-compact="true"] .settings__panel .btn {
+  min-height: 2.7rem;
+}
+:root[data-compact="true"] .showdown {
+  padding: calc(3.6rem + env(safe-area-inset-top)) 0.75rem
+    calc(1rem + env(safe-area-inset-bottom));
+}
+:root[data-compact="true"] .showdown__panel {
+  gap: 0.7rem;
+}
+:root[data-compact="true"] .showdown__board,
+:root[data-compact="true"] .showhand__cards {
+  gap: 0.35rem;
+}
+:root[data-compact="true"] .showdown__hands {
+  gap: 0.8rem;
+}
+:root[data-compact="true"] .flip {
+  width: 2.8rem;
+  height: 3.9rem;
+}
+:root[data-compact="true"] .flip__front b {
+  font-size: 1.5rem;
+}
+:root[data-compact="true"] .flip__front i {
+  font-size: 0.95rem;
+}
+:root[data-compact="true"] .showdown__next {
+  min-height: 3rem;
+}
+
+/* ---- Touch: what a finger cannot do ---- */
+
+/* A slider dragged with a thumb needs somewhere to put the thumb. The track is
+   unchanged; the hit area around it is not. */
+:root[data-touch="true"] input[type="range"] {
+  height: 2.2rem;
+}
+
+/* A hover style on a touchscreen is applied by the *tap* and then left there
+   until something else is touched, so a button pressed a minute ago is still
+   lit as though a finger were resting on it - which on this HUD means a Fold
+   button glowing at a player who folded two hands ago. */
+@media (hover: none) {
+  .btn:hover:not(:disabled) {
+    border-color: var(--line-bright);
+    color: var(--text);
+    box-shadow: none;
+  }
+  .btn--primary:hover:not(:disabled),
+  .btn--raise:hover:not(:disabled) {
+    border-color: var(--accent-bright);
+    color: var(--accent-ink);
+    filter: none;
+  }
+  .btn--fold:hover:not(:disabled) {
+    border-color: rgba(255, 139, 134, 0.45);
+    color: #ffc9c6;
+    box-shadow: none;
+  }
+  .btn--call:hover:not(:disabled) {
+    border-color: rgba(123, 216, 143, 0.45);
+    color: #c8f0d1;
+    box-shadow: none;
+  }
+  .field input:hover {
+    border-color: var(--line);
+  }
+  .board__hide:hover,
+  .board__peg:hover {
+    color: var(--dim);
+  }
+}

@@ -16,6 +16,7 @@ import {
   type LookAxes,
 } from "./keyboardLook.js";
 import { DEFAULT_SENSITIVITY, lookResponse } from "./lookCurve.js";
+import { applyDragLook, dragLookScale } from "./mobileView.js";
 import { dampAngle } from "./damp.js";
 
 /**
@@ -36,6 +37,13 @@ import { dampAngle } from "./damp.js";
  *
  * The look can also be released entirely, which is what lets a settings
  * overlay hand the cursor back without the view following it around.
+ *
+ * On a phone none of the first point survives contact, because there is no
+ * cursor to follow: a finger has no position until it is down, so an absolute
+ * mapping would snap the view to wherever somebody happened to touch. `drag`
+ * mode turns the same head with accumulated deltas instead, into the same
+ * clamped arc, and letting go leaves it where it was put. See
+ * `mobileView.ts`; everything below the input is unchanged.
  *
  * W, A, S and D turn the head too, and they *add* to the cursor rather than
  * taking over from it: there is no mode and nothing to switch between. All of
@@ -76,6 +84,13 @@ export interface SeatedCameraProps {
    * test or a screenshot rig should not have to fake a keyboard.
    */
   lookKeys?: RefObject<LookAxes> | undefined;
+  /**
+   * How the pointer turns the head. `hover` follows cursor position, which is
+   * what a mouse is; `drag` accumulates while a finger is down, which is what
+   * a touchscreen is. Both write the same `target`, so switching between them
+   * - a tablet with a trackpad, say - does not move the view.
+   */
+  lookMode?: "hover" | "drag";
 }
 
 export function SeatedCamera({
@@ -83,6 +98,7 @@ export function SeatedCamera({
   lookEnabled,
   sensitivity = DEFAULT_SENSITIVITY,
   lookKeys,
+  lookMode = "hover",
 }: SeatedCameraProps) {
   const camera = useThree((s) => s.camera);
   const domElement = useThree((s) => s.gl.domElement);
@@ -107,6 +123,63 @@ export function SeatedCamera({
   settings.current = { lookEnabled, sensitivity };
 
   useEffect(() => {
+    if (lookMode === "drag") {
+      // One finger only. A second touch is a pinch or a stray palm, and
+      // averaging two of them into one heading is how a view starts to swim.
+      let held: number | null = null;
+      let last = { x: 0, y: 0 };
+
+      const onDown = (event: PointerEvent) => {
+        if (held !== null || !settings.current.lookEnabled) return;
+        held = event.pointerId;
+        last = { x: event.clientX, y: event.clientY };
+        // So a drag that leaves the canvas - over the action bar, off the top
+        // of the screen - keeps turning the head instead of stopping dead.
+        try {
+          domElement.setPointerCapture(event.pointerId);
+        } catch {
+          // Capture is a convenience; the window listeners below still work.
+        }
+      };
+
+      const onMove = (event: PointerEvent) => {
+        if (event.pointerId !== held) return;
+        const dx = event.clientX - last.x;
+        const dy = event.clientY - last.y;
+        last = { x: event.clientX, y: event.clientY };
+        // Checked here rather than at pointerdown as well, so a menu opening
+        // mid-drag stops the view immediately rather than at the next release.
+        if (!settings.current.lookEnabled) return;
+        target.current = applyDragLook(
+          target.current,
+          dx,
+          dy,
+          dragLookScale(settings.current.sensitivity),
+        );
+      };
+
+      const onEnd = (event: PointerEvent) => {
+        if (event.pointerId !== held) return;
+        try {
+          domElement.releasePointerCapture(event.pointerId);
+        } catch {
+          // Already released, or never captured. Either way we are done.
+        }
+        held = null;
+      };
+
+      domElement.addEventListener("pointerdown", onDown);
+      domElement.addEventListener("pointermove", onMove);
+      domElement.addEventListener("pointerup", onEnd);
+      domElement.addEventListener("pointercancel", onEnd);
+      return () => {
+        domElement.removeEventListener("pointerdown", onDown);
+        domElement.removeEventListener("pointermove", onMove);
+        domElement.removeEventListener("pointerup", onEnd);
+        domElement.removeEventListener("pointercancel", onEnd);
+      };
+    }
+
     const onPointerMove = (event: PointerEvent) => {
       if (!settings.current.lookEnabled) return;
 
@@ -127,7 +200,7 @@ export function SeatedCamera({
     // No pointerleave handler on purpose: the head holds where it was left
     // rather than snapping forward the moment the cursor reaches a button.
     return () => domElement.removeEventListener("pointermove", onPointerMove);
-  }, [domElement]);
+  }, [domElement, lookMode]);
 
   useEffect(() => {
     // Yaw about world up, then pitch about the turned head's own right. The

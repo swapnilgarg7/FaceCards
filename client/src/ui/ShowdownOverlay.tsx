@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TablePhase } from "@facecards/shared";
 import type { RoomSnapshot, SeatSnapshot } from "../net/useRoom.js";
 import { Kbd } from "./Kbd.js";
+import { useView } from "./useViewport.js";
 import { FlipCard } from "./PlayingCard.js";
 import { useKeybinds } from "./useKeybinds.js";
 import {
@@ -51,6 +52,7 @@ export function ShowdownOverlay({
   me,
   onNextHand,
 }: ShowdownOverlayProps) {
+  const { touch } = useView();
   const decided = snapshot.phase === TablePhase.Payout;
 
   // How much of the board this client had already watched land. Written from
@@ -191,7 +193,9 @@ export function ShowdownOverlay({
               {plan.summary || "Hand over"}
             </p>
           ) : (
-            <p className="showdown__hint">Click or press Enter to skip ahead</p>
+            <p className="showdown__hint">
+              {touch ? "Tap to skip ahead" : "Click or press Enter to skip ahead"}
+            </p>
           )}
         </div>
 

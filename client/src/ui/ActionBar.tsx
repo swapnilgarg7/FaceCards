@@ -14,6 +14,7 @@ import {
 import { Kbd } from "./Kbd.js";
 import { TurnClock } from "./TurnClock.js";
 import { useKeybinds } from "./useKeybinds.js";
+import { useView } from "./useViewport.js";
 
 /**
  * Fold / Check / Call / Raise, on the keyboard first.
@@ -52,6 +53,7 @@ export function ActionBar({
   enabled: boolean;
   onAct(turn: number, type: PokerActionType, amount?: number): void;
 }) {
+  const view = useView();
   const myTurn = !!me && snapshot.actingSeat === me.seat;
   // Every intent answers the decision that was on screen when it was chosen.
   const turn = snapshot.turn;
@@ -146,18 +148,24 @@ export function ActionBar({
         {/* Waiting for someone else is exactly when there is time to learn
             these, so they are laid out as the three buttons they are about to
             become rather than as a footnote. Dim, because none of them do
-            anything yet. */}
-        <div className="actions__legend">
-          <span className="legend__item">
-            <Kbd bind="fold" /> Fold
-          </span>
-          <span className="legend__item">
-            <Kbd bind="checkCall" /> Check / Call
-          </span>
-          <span className="legend__item">
-            <Kbd bind="raise" /> Raise
-          </span>
-        </div>
+            anything yet.
+
+            It is only ever a rehearsal of the keyboard, so on a touchscreen
+            it is three words with nothing to learn from them - and the space
+            it costs is space the room could be using. */}
+        {!view.touch && (
+          <div className="actions__legend">
+            <span className="legend__item">
+              <Kbd bind="fold" /> Fold
+            </span>
+            <span className="legend__item">
+              <Kbd bind="checkCall" /> Check / Call
+            </span>
+            <span className="legend__item">
+              <Kbd bind="raise" /> Raise
+            </span>
+          </div>
+        )}
       </div>
     );
   }
@@ -239,7 +247,7 @@ export function ActionBar({
             >
               All in {formatChips(bounds.max)} <Kbd bind="allIn" />
             </button>
-            {canSlide && (
+            {canSlide && !view.touch && (
               <span className="sizer__nudge">
                 <Kbd bind="raiseDown" />
                 <Kbd bind="raiseUp" />

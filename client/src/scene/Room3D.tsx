@@ -1,6 +1,6 @@
-import { useMemo, type RefObject } from "react";
-import { Canvas } from "@react-three/fiber";
-import { ACESFilmicToneMapping } from "three";
+import { useEffect, useMemo, type RefObject } from "react";
+import { Canvas, useThree } from "@react-three/fiber";
+import { ACESFilmicToneMapping, PerspectiveCamera } from "three";
 import { Avatar } from "../avatars/Avatar.js";
 import type { UseMedia } from "../media/useMedia.js";
 import type { RoomSnapshot } from "../net/useRoom.js";
@@ -15,6 +15,7 @@ import { TableCards } from "./TableCards.js";
 import { FIXTURES, PALETTE_FOG, ROOM_RADIUS } from "./decor.js";
 import type { LookAxes } from "./keyboardLook.js";
 import { assignSeats, seatLayout } from "./layout.js";
+import { fitFov } from "./mobileView.js";
 
 /**
  * The room: table, lights, one avatar per remote player, and the local
@@ -43,9 +44,42 @@ export interface Room3DProps {
   /** True when a chip push is a legal thing to start right now. */
   canPushChips: boolean;
   onChipGrab(clientY: number): void;
+  /** How the pointer turns the head. See `SeatedCamera`. */
+  lookMode?: "hover" | "drag";
+  /**
+   * A phone. Shadows and multisampling come off and the pixel ratio is capped
+   * harder, because a handset GPU spends its whole budget on the faces - which
+   * are the product - long before it gets to a contact shadow under a chip.
+   */
+  lite?: boolean;
 }
 
-function Lighting() {
+/**
+ * Keep the lens matched to the window's shape.
+ *
+ * The camera prop on `Canvas` is read once at creation, and a phone changes
+ * shape twice: when it is turned, and every time the URL bar collapses. This
+ * is the only thing in the scene that touches the projection matrix, and it
+ * does so on resize rather than per frame - `fitFov` is stepped precisely so
+ * that a slow URL-bar collapse cannot make the lens breathe.
+ */
+function FitLens() {
+  const camera = useThree((s) => s.camera);
+  const width = useThree((s) => s.size.width);
+  const height = useThree((s) => s.size.height);
+
+  useEffect(() => {
+    if (!(camera instanceof PerspectiveCamera)) return;
+    const fov = fitFov(width, height);
+    if (camera.fov === fov) return;
+    camera.fov = fov;
+    camera.updateProjectionMatrix();
+  }, [camera, width, height]);
+
+  return null;
+}
+
+function Lighting({ lite }: { lite: boolean }) {
   const pendant = FIXTURES.find((f) => f.id === "pendant")!;
 
   return (
@@ -81,7 +115,7 @@ function Lighting() {
         intensity={34}
         distance={7}
         color="#ffdca8"
-        castShadow
+        castShadow={!lite}
         shadow-mapSize={[1024, 1024]}
         shadow-camera-near={0.4}
         shadow-camera-far={4}
@@ -117,6 +151,8 @@ export function Room3D({
   betPreview,
   canPushChips,
   onChipGrab,
+  lookMode = "hover",
+  lite = false,
 }: Room3DProps) {
   const players = snapshot.players;
 
@@ -146,13 +182,17 @@ export function Room3D({
 
   return (
     <Canvas
-      shadows
+      // The contact shadow under the chips is most of what sells the felt as
+      // a surface - and on a handset it is also the single most expensive
+      // thing in the frame. A phone keeps the faces and loses the shadow.
+      shadows={!lite}
       // Cap the pixel ratio: a Retina MacBook Air renders four times the
       // pixels for a difference nobody sees on a stylised scene, and the 60
-      // FPS target is a design constraint rather than a phase-6 cleanup.
-      dpr={[1, 1.75]}
-      camera={{ fov: 55, near: 0.05, far: 40 }}
-      gl={{ antialias: true, powerPreference: "high-performance" }}
+      // FPS target is a design constraint rather than a phase-6 cleanup. A
+      // phone at DPR 3 is nine times the pixels, on a tenth of the GPU.
+      dpr={lite ? [1, 1.5] : [1, 1.75]}
+      camera={{ fov: fitFov(window.innerWidth, window.innerHeight), near: 0.05, far: 40 }}
+      gl={{ antialias: !lite, powerPreference: "high-performance" }}
       onCreated={({ gl }) => {
         gl.toneMapping = ACESFilmicToneMapping;
         gl.toneMappingExposure = 1.05;
@@ -167,7 +207,8 @@ export function Room3D({
           depth cue a room this small gets. */}
       <fog attach="fog" args={[PALETTE_FOG, 3.4, 11]} />
 
-      <Lighting />
+      <FitLens />
+      <Lighting lite={lite} />
       <RoomShell />
       <PokerTable />
 
@@ -180,6 +221,11 @@ export function Room3D({
         sessionId={sessionId}
         peeking={peeking}
         onPeekChange={onPeekChange}
+        // Press-and-hold on the felt is a mouse gesture. On a touchscreen the
+        // same press is the drag that turns your head, and two readings of one
+        // finger is a table that lifts its cards every time you look left. The
+        // phone shows the two cards face up in the footer instead.
+        peekPad={lookMode !== "drag"}
       />
       <ChipField snapshot={snapshot} placed={placed} preview={betPreview} />
 
@@ -207,6 +253,7 @@ export function Room3D({
         lookEnabled={lookEnabled}
         sensitivity={sensitivity}
         lookKeys={lookKeys}
+        lookMode={lookMode}
       />
 
       {/* Spec sections 6 and 12: the face you turn towards gets the top

@@ -3,6 +3,7 @@ import { KEYBINDS, LOOK_KEYBIND_IDS, keyLabel, keybind } from "./keybinds.js";
 import type { UseTableAudio } from "../audio/useTableAudio.js";
 import type { UseMedia } from "../media/useMedia.js";
 import { DEFAULT_SENSITIVITY } from "../scene/lookCurve.js";
+import { useView } from "./useViewport.js";
 
 /**
  * The Escape menu.
@@ -70,6 +71,7 @@ export function SettingsPanel({
   onClose,
   onLeave,
 }: SettingsPanelProps) {
+  const { touch } = useView();
   const panelRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
 
@@ -116,7 +118,7 @@ export function SettingsPanel({
           </div>
           {media.audioBlocked && (
             <button className="banner" onClick={() => void media.startAudio()}>
-              Click to enable sound
+              {touch ? "Tap to enable sound" : "Click to enable sound"}
             </button>
           )}
           {media.error && <p className="note note--error">{media.error}</p>}
@@ -167,38 +169,52 @@ export function SettingsPanel({
             />
           </label>
           <p className="note">
-            How far the view turns for a given cursor position. Every setting
-            still reaches the whole table; a lower one just asks for a more
-            deliberate movement to get there.
+            {touch
+              ? "How far the view turns for a given drag. Every setting still reaches the whole table; a lower one just asks for a longer sweep to get there."
+              : "How far the view turns for a given cursor position. Every setting still reaches the whole table; a lower one just asks for a more deliberate movement to get there."}
           </p>
+          {touch && (
+            <p className="note">
+              Drag anywhere on the table to look around. Your head stays where
+              you leave it.
+            </p>
+          )}
         </section>
 
-        <section className="settings__section">
-          <h3>Keyboard</h3>
-          <dl className="settings__keys">
-            {KEYBINDS.map((bind) => (
-              <div key={bind.id} className="settings__key">
-                <dt>
-                  <kbd className="kbd">{keyLabel(bind.id)}</kbd>
-                </dt>
-                <dd>
-                  {bind.label}
-                  {bind.hold && <span className="settings__hold">hold</span>}
-                </dd>
-              </div>
-            ))}
-          </dl>
-          <p className="note">
-            The mouse turns your head, so reaching for a button swings the view
-            on the way there. Everything you do on your turn has a key so it
-            does not have to.
-          </p>
-          <p className="note">
-            {LOOK_KEYBIND_IDS.map((id) => keybind(id).key.toUpperCase()).join("")}{" "}
-            turn your head, and they add to the mouse rather than taking over
-            from it. Let go and the cursor is still steering.
-          </p>
-        </section>
+        {/* The whole section is about a device this player does not have.
+            Printing eighteen shortcuts on a phone is eighteen instructions
+            that cannot be followed, in the one panel small enough that
+            scrolling past them costs something. */}
+        {!touch && (
+          <section className="settings__section">
+            <h3>Keyboard</h3>
+            <dl className="settings__keys">
+              {KEYBINDS.map((bind) => (
+                <div key={bind.id} className="settings__key">
+                  <dt>
+                    <kbd className="kbd">{keyLabel(bind.id)}</kbd>
+                  </dt>
+                  <dd>
+                    {bind.label}
+                    {bind.hold && <span className="settings__hold">hold</span>}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            <p className="note">
+              The mouse turns your head, so reaching for a button swings the
+              view on the way there. Everything you do on your turn has a key
+              so it does not have to.
+            </p>
+            <p className="note">
+              {LOOK_KEYBIND_IDS.map((id) =>
+                keybind(id).key.toUpperCase(),
+              ).join("")}{" "}
+              turn your head, and they add to the mouse rather than taking over
+              from it. Let go and the cursor is still steering.
+            </p>
+          </section>
+        )}
 
         <section className="settings__section">
           <h3>Room</h3>
@@ -235,7 +251,11 @@ export function SettingsPanel({
           </p>
         </section>
 
-        <p className="note settings__hint">Press Esc to go back to the table.</p>
+        {!touch && (
+          <p className="note settings__hint">
+            Press Esc to go back to the table.
+          </p>
+        )}
       </div>
     </div>
   );
