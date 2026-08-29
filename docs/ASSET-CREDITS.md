@@ -18,9 +18,22 @@ License policy: free for commercial use, no purchase. CC0 preferred. CC-BY allow
 
 ## Audio
 
+All from one pack: **Kenney Casino Audio 1.1**, CC0 1.0, verified on the asset page and in the `License.txt` inside the download, which ships alongside the files at `client/public/audio/LICENSE.txt`. Credit is welcomed by the author but explicitly not required, so there is no attribution line to reproduce in-app.
+
+Twenty-four of the pack's fifty clips are shipped: the ones the table can actually ask for. `scripts/verify-phase4.mjs` checks this table against both the manifest in `client/src/audio/sounds.ts` and the files on disk, in all three directions, so a sound cannot be added without a row here and a file cannot ship that nothing plays.
+
 | Asset | File in repo | Source URL | Author | License | Attribution required |
 | --- | --- | --- | --- | --- | --- |
-| _(none yet)_ | | | | | |
+| Card shuffle (riffle) | `client/public/audio/card-shuffle.ogg` | https://kenney.nl/assets/casino-audio | Kenney Vleugels (kenney.nl) | CC0 1.0 | No |
+| Card dealt / slid across felt | `client/public/audio/card-slide-1.ogg, client/public/audio/card-slide-2.ogg, client/public/audio/card-slide-3.ogg, client/public/audio/card-slide-4.ogg` | https://kenney.nl/assets/casino-audio | Kenney Vleugels (kenney.nl) | CC0 1.0 | No |
+| Card placed face up (board) | `client/public/audio/card-place-1.ogg, client/public/audio/card-place-2.ogg, client/public/audio/card-place-3.ogg, client/public/audio/card-place-4.ogg` | https://kenney.nl/assets/casino-audio | Kenney Vleugels (kenney.nl) | CC0 1.0 | No |
+| Hand pushed away (fold) | `client/public/audio/card-shove-1.ogg, client/public/audio/card-shove-2.ogg, client/public/audio/card-shove-3.ogg` | https://kenney.nl/assets/casino-audio | Kenney Vleugels (kenney.nl) | CC0 1.0 | No |
+| Chips laid down (bet) | `client/public/audio/chip-lay-1.ogg, client/public/audio/chip-lay-2.ogg, client/public/audio/chip-lay-3.ogg` | https://kenney.nl/assets/casino-audio | Kenney Vleugels (kenney.nl) | CC0 1.0 | No |
+| Chips gathered (bets swept into the pot) | `client/public/audio/chips-handle-1.ogg, client/public/audio/chips-handle-2.ogg, client/public/audio/chips-handle-3.ogg` | https://kenney.nl/assets/casino-audio | Kenney Vleugels (kenney.nl) | CC0 1.0 | No |
+| Chips stacked (pot pushed to the winner) | `client/public/audio/chips-stack-1.ogg, client/public/audio/chips-stack-2.ogg, client/public/audio/chips-stack-3.ogg` | https://kenney.nl/assets/casino-audio | Kenney Vleugels (kenney.nl) | CC0 1.0 | No |
+| Single chip clink | `client/public/audio/chips-collide-1.ogg, client/public/audio/chips-collide-2.ogg, client/public/audio/chips-collide-3.ogg` | https://kenney.nl/assets/casino-audio | Kenney Vleugels (kenney.nl) | CC0 1.0 | No |
+
+**Not a file:** the low room murmur under the table is synthesised at runtime by `client/src/audio/murmur.ts` rather than sampled. No CC0 crowd bed was found (see `ASSET-SOURCES.md`), and a short loop of chatter is recognisable as a loop within a minute of a session people sit inside for a whole evening. Filtered noise costs no licence row and never repeats.
 
 ## Fonts
 

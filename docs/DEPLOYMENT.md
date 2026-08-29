@@ -120,8 +120,52 @@ anyone, the game server is fine and the LiveKit credentials are wrong.
 ## Caveats to expect
 
 - **Free tier spins down after 15 minutes idle**, with a cold start around a
-  minute. Rooms live in memory, so a spin-down ends every table. A keep-alive
-  ping while a session is active is on the phase list in `plan.md`.
+  minute. Rooms live in memory, so a spin-down ends every table.
+
+  A keep-alive ping every 14 minutes does hold it awake 24/7, but read the
+  arithmetic first: a workspace gets **750 Free instance hours per calendar
+  month** and a month is 720 to 744 hours, so one always-on free service eats
+  essentially the whole allowance. `facecards-server` must then be the *only*
+  free web service in the workspace, or Render suspends all of them until the
+  first of the next month. Keep the client on Cloudflare Pages, not on a second
+  Render service.
+
+  Ping `/api/health`, not `/robots.txt`. Render answers `/robots.txt` itself
+  while a service is spun down, so a monitor pointed there reports green
+  forever while the service sleeps behind it.
+
+  Use an external monitor (UptimeRobot, cron-job.org) rather than a self-ping.
+  A self-ping cannot wake a service that has already gone down, and it is
+  outbound traffic the service initiates, which is the category Render's docs
+  reserve the right to suspend for.
+
+- **Untested: whether a live WebSocket alone counts as traffic.** The docs say a
+  spun-down service wakes on "an HTTP request or new WebSocket connection", and
+  say spin-down follows 15 minutes with no inbound traffic, without settling
+  whether an already-open socket carrying game messages counts. If it does not,
+  a table could spin down mid-hand with six players connected. The keep-alive
+  ping covers this either way. Worth confirming with one long idle-ish session
+  before a real playtest.
+
+- **512 MB RAM and 0.1 CPU** on the free instance type, and measurement says
+  that is enough. Six headless bots playing continuous hands (96 actions in 30
+  seconds, faster than humans play) cost the server **0.34s of CPU over 33s of
+  wall clock: 1.0% of one core**, against the 10% that 0.1 CPU buys. Working
+  set was 73 MB of the 512 MB. Roughly 10x headroom on CPU, 7x on memory.
+
+  Two honest caveats on that number: it was measured on a dev machine whose
+  core is faster than a share of a Render core, so call it 5x if you want to be
+  pessimistic, and it covers one table. Concurrent tables scale it roughly
+  linearly.
+
+  Media is why this is so cheap: video and audio go browser-to-LiveKit and
+  never touch this process. It serves small state patches and nothing else.
+
+- **Cold start is the free tier's real cost, not capacity.** `tsx` compiles the
+  TypeScript at boot: 1.6s on a dev machine, and that sits on top of Render's
+  ~1 minute spin-up, inflated by whatever throttling 0.1 CPU implies. If cold
+  starts become the thing you hate, precompiling with `tsc` is the fix, and it
+  means giving `@facecards/shared` a build output instead of exporting source.
 - **One instance only.** Colyseus matchmaking here is in-process
   (`matchMaker.query`). Scaling past one instance needs a Redis presence and
   driver, or rooms on different instances will not see each other.

@@ -267,8 +267,13 @@ a sit-out and a six-way privacy sweep), plus `netcode-security` and
 
 ---
 
-### Phase 4: Physical interaction
+### Phase 4: Physical interaction — DONE
 **Spec definition of done:** cards and chips have polished 3D interactions and sounds.
+
+Verified by unit tests, `npm run typecheck`, and `npm run verify:phase4`
+(15 checks: the shipped sound assets against the manifest and the credits
+table, then a real hand replayed through the drawing layer), plus `scene-perf`.
+See `README.md` for the checklist and the boundaries left open.
 
 Where poker stops feeling like a web form.
 
@@ -284,6 +289,15 @@ Where poker stops feeling like a web form.
 - Peeking at your cards feels like lifting the corner of a real card.
 - Pushing chips in feels better than clicking Call. Test this on someone who has not seen the codebase.
 - No interaction can produce an illegal action. The server still validates everything.
+
+**What the build corrected**
+- **The chips are not animated; they are re-derived.** Nobody wrote a "collect the bets" animation or a "slide the pot to the winner" animation. A stack, a bet and a pot are numbers, `chips.ts` turns a number into positions, and `chipPool.ts` decides which drawn chip is which across a change of state - same denomination, nearest first. When a round closes, the same chips are simply wanted in the middle instead of in front of a seat, and they glide there because they kept their identity. Both of the phase's headline chip motions are that one mechanism pointed in different directions.
+- **A split pot does not divide evenly, and that reaches the felt.** Three players splitting 65 get 21, 22 and 22, and from that moment no stack at the table is on the five. Denominations of 500/100/25/5 could not draw those stacks exactly, so the picture would have quietly disagreed with the number for the rest of the session. The 1 chip exists for that and only that: it is change, never a base, or a small blind would draw as five white chips instead of one red one. `verify:phase4` found this by running real server output through the layout, which no hand-written fixture had.
+- **The gesture is not validated; it is built out of legal values.** A chip push cannot aim at an illegal action because every rung of its ladder comes from `canCheck`, `canRaise`, `callAmount`, `minRaiseTo` and `maxRaiseTo` - flags the server published. There is nothing else to land on, so there is nothing to check. The intent still travels the same `act()` path as the buttons, with the same turn token, and the server still decides.
+- **A face-down card has no value, rather than a hidden one.** The face is a property of the geometry: a card this client was not sent is built from the back slot, and there is no rank or suit anywhere in the object. `cardIndex` refuses anything it does not recognise, so a malformed string cannot resolve to a face by accident either.
+- **Deals are tweened and everything else is damped.** A deal has a stated start, end and duration, so every client draws the same flight; a card following a table that re-flowed, or a chip following a pot that is still growing, is damped, because those targets move for reasons no two clients agree on the timing of.
+- **The room murmur is synthesised.** No CC0 crowd bed exists, and a short loop of chatter is recognisable as a loop inside a minute of an evening-long session. Three bands of filtered noise on incommensurate cycles never repeat, cost no licence row, and are the same argument the card atlas already makes for being drawn rather than downloaded.
+- **Cards cast no shadow.** `scene-perf` was right that seventeen 1.6mm rectangles lying flush on felt double what the phase costs in draw calls for a shadow nobody can see.
 
 **Traps**
 - Resist adding physics. The spec asks for satisfying motion, not simulation.

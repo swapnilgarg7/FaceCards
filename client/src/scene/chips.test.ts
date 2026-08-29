@@ -17,16 +17,34 @@ import {
 import { TABLE, seatLayout } from "./layout.js";
 
 describe("chipBreakdown", () => {
-  it("is worth exactly what it draws, at every legal amount", () => {
-    // Every amount reachable at these stakes is a multiple of the small blind,
-    // and the smallest denomination divides it, so nothing is ever lost.
-    for (let amount = 0; amount <= 4000; amount += SMALL_BLIND) {
+  it("is worth exactly what it draws, at every amount", () => {
+    // Every whole number, not every multiple of the blind. A split pot leaves
+    // odd chips behind - 65 three ways is 21, 22, 22 - so from the first split
+    // onwards no stack at the table is on the five.
+    for (let amount = 0; amount <= 4000; amount++) {
       expect(chipValue(chipBreakdown(amount))).toBe(amount);
     }
   });
 
+  it("draws an odd chip left by a split pot", () => {
+    expect(chipValue(chipBreakdown(7))).toBe(7);
+    expect(chipValue(chipBreakdown(1008))).toBe(1008);
+    expect(chipValue(chipBreakdown(993))).toBe(993);
+    // As change on a proper chip, never as a pile of ones.
+    expect(chipBreakdown(7)).toEqual([5, 1, 1]);
+  });
+
+  it("never builds a pile out of the odd-chip denomination", () => {
+    // The 1 exists to pay out a split pot exactly. A stack drawn in ones
+    // would be technically the same money and wrong in the way that counts.
+    for (let amount = 1; amount <= 3000; amount++) {
+      const chips = chipBreakdown(amount);
+      expect(chips.filter((c) => c === 1).length).toBeLessThan(5);
+    }
+  });
+
   it("never exceeds the pile cap", () => {
-    for (let amount = 0; amount <= 20000; amount += SMALL_BLIND) {
+    for (let amount = 0; amount <= 20000; amount++) {
       expect(chipBreakdown(amount).length).toBeLessThanOrEqual(
         MAX_CHIPS_PER_PILE,
       );
@@ -59,7 +77,7 @@ describe("chipBreakdown", () => {
   });
 
   it("is descending, so a pile never has a big chip on top of a small one", () => {
-    for (let amount = 5; amount <= 5000; amount += 5) {
+    for (let amount = 1; amount <= 5000; amount++) {
       const chips = chipBreakdown(amount);
       for (let i = 1; i < chips.length; i++) {
         expect(chips[i]!).toBeLessThanOrEqual(chips[i - 1]!);

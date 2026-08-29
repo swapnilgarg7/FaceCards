@@ -44,6 +44,16 @@ describe("the binding table", () => {
     for (const bind of KEYBINDS) expect(bind.label.length).toBeGreaterThan(0);
   });
 
+  it("marks the one binding that is held rather than pressed", () => {
+    // Peeking is a hold because that is what the gesture is: you are holding
+    // the corner of a card up, and letting go puts it face down. The flag is
+    // what routes it to `useHoldKeybind` instead of the keydown dispatcher,
+    // so losing it would peek once and never put the cards back.
+    const held = KEYBINDS.filter((bind) => bind.hold);
+    expect(held.map((bind) => bind.id)).toEqual(["peek"]);
+    expect(held[0]!.key).toBe(" ");
+  });
+
   it("looks a binding up by id, and refuses an unknown one", () => {
     expect(keybind("fold").key).toBe("f");
     expect(() => keybind("nope" as never)).toThrow(/no keybind/);
@@ -59,6 +69,10 @@ describe("labels", () => {
 
   it("marks a shifted binding", () => {
     expect(keyLabel("allIn")).toBe("⇧R");
+  });
+
+  it("names the space bar rather than printing a blank chip", () => {
+    expect(keyLabel("peek")).toBe("Space");
   });
 });
 
@@ -89,6 +103,14 @@ describe("matching", () => {
       expect(matchKeybind(press(reserved))).toBeUndefined();
       expect(matchKeybind(press(reserved.toUpperCase()))).toBeUndefined();
     }
+  });
+
+  it("hands a held key to the dispatcher that knows about letting go", () => {
+    // `matchKeybind` still recognises it - the table is one binding table -
+    // but `useKeybinds` refuses to fire a hold, because a keydown-only
+    // dispatcher has nowhere to put the keyup.
+    expect(matchKeybind(press(" "))?.id).toBe("peek");
+    expect(matchKeybind(press(" "))?.hold).toBe(true);
   });
 
   it("does not fire on a key nothing is bound to", () => {

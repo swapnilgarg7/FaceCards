@@ -10,12 +10,14 @@ head, talking over live voice.
 - Pinned versions and the reasoning behind each: `docs/TECH-DECISIONS.md`
 - Working agreements for day-to-day changes: `CLAUDE.md`
 
-**Phases 0 (technical spike), 2 (poker prototype) and 3 (multiplayer) are
-complete.** The server runs a full authoritative Hold'em game for two to six
-players, holds a dropped player's seat while they reconnect, and keeps the hand
-moving on a clock when nobody answers. The client renders it through a
-deliberately plain HUD; cards and chips become physical objects in phase 4 and
-get their art in phase 5, so ugly is still correct here.
+**Phases 0 (technical spike), 2 (poker prototype), 3 (multiplayer) and 4
+(physical interaction) are complete.** The server runs a full authoritative
+Hold'em game for two to six players, holds a dropped player's seat while they
+reconnect, and keeps the hand moving on a clock when nobody answers. The game
+is now on the table rather than in a HUD: cards fly out of the dealer's hands
+and lie on the felt, you hold your own two up to look at them, every chip in
+the room is drawn from server state, and the table has its own sound. The art
+arrives in phase 5, so plain is still correct here — but web-form is not.
 
 Phase 1's scene, seated camera and webcam-face pipeline are built, but its exit
 criteria are the ones only a person can sign off — eye-line, and five minutes
@@ -54,6 +56,7 @@ Deploying to LiveKit Cloud and Render: `docs/DEPLOYMENT.md`.
 | `npm run verify:phase0` | Plumbing check against a running stack |
 | `npm run verify:phase2` | Plays a full hand against a running stack |
 | `npm run verify:phase3` | Six clients, a drop, a reconnect, and a sit-out |
+| `npm run verify:phase4` | Sound assets, then a hand replayed through the drawing layer |
 | `npm run build` | Production client bundle |
 | `npm run livekit:up` / `:down` / `:logs` | Local SFU |
 
@@ -69,6 +72,15 @@ complete hand — blinds, a raise, all four streets, showdown, payout, and the
 next hand dealing itself — and it snapshots every state frame either client
 ever received to assert that no opponent hole card, no deck stub and no burn
 card appeared in any of them before the showdown published them deliberately.
+
+`npm run verify:phase4` runs its sound-asset section with nothing running, and
+needs `npm run dev` for the rest. It plays a hand and pushes every state patch
+either client received back through the *drawing* layer the scene uses: every
+stack, bet and pot has to draw chips worth exactly what the server said, every
+rung of the chip-push ladder has to be legal by that same patch's own flags,
+and no client may ever be able to resolve an opponent's card to a face. It is
+what caught the odd chip a split pot leaves behind, which no hand-written
+fixture had.
 
 `npm run verify:phase3` needs only `npm run dev`, and takes about a minute.
 It also carries the regression guard for the clock: a player who is *not* on
@@ -109,7 +121,12 @@ the two-tab test is meant to be run.
 client/   React + TypeScript + Vite
   src/media/   media provider boundary — the ONLY place livekit-client is imported
   src/net/     Colyseus client and state mirror
-  src/ui/      lobby and table (phase 0 placeholder for the 3D scene)
+  src/scene/   the 3D room: table, seats, cards, chips, camera. Pure maths in
+               .ts files, renderer in .tsx, so the geometry is unit-testable
+  src/avatars/ bodies, archetypes and the webcam face-plane socket
+  src/audio/   table sound: the cue derivation, the WebAudio engine, the bed
+  src/ui/      lobby, HUD, keybindings and the flat action controls
+  public/audio/ Kenney CC0 foley (see docs/ASSET-CREDITS.md)
 server/   Node + TypeScript, authoritative
   src/rooms/   Colyseus rooms, room codes, seats
   src/state/   StateView wiring (who may see what)
@@ -270,5 +287,63 @@ Known boundaries left to later phases, on purpose:
 - An all-in seat whose player leaves for good still reaches the showdown in the
   engine but has no seat to publish it against, so its winnings leave with it.
 
-Next: **phase 4, physical interaction** — cards you pick up and peek at, a deal
-animation, chips as one `InstancedMesh`, and sound. See `plan.md`.
+## Phase 4 status
+
+Verified by unit tests, `npm run typecheck`, and `npm run verify:phase4`
+(15 checks), plus `scene-perf`.
+
+- [x] **Cards are objects on the felt.** The board lies in a row through the
+      middle and every seat has two cards in front of it. A card this client
+      was not sent is built from the back slot of the atlas and carries no rank
+      or suit at all — a face-down card has no value, not a hidden one
+- [x] **Peeking.** Hold Space, or press and hold on your own two cards, and
+      they draw back towards you and stand up. Entirely local and view-only:
+      the server already sent this client its own cards, so there is no
+      round-trip and nothing for anyone else to see
+- [x] **A deal is a deal.** Cards fly out of the deck in front of the button,
+      once round the table and then round again, on a tweened arc with a stated
+      start, end and duration so every client watches the same flight. Joining
+      or reconnecting mid-hand does not replay a deal that already happened
+- [x] **Every chip in the room in one `InstancedMesh`.** Stacks in front of
+      each seat, bets pushed forward, and the collected pot as a ring of piles
+      around the board — a ring because it is the one shape in the middle that
+      is the same from every seat
+- [x] **Bets collect and pots slide, without an animation for either.** Chips
+      keep their identity across a change of state (`chipPool.ts`), so when a
+      round closes the same chips are simply wanted in the middle and they
+      glide there. The pot going to the winner is the same mechanism
+- [x] **Pushing chips in.** On your turn, drag from your own stack towards the
+      pot: the pile in front of your seat grows under your hand, detents click
+      past as the amount changes, and letting go commits. **It cannot aim at an
+      illegal action** — every rung comes from the legality flags the server
+      published, so there is nothing else to land on
+- [x] Fold / Check / Call / Raise remain as buttons with their keyboard
+      shortcuts (spec section 8), and so does your own hand in the HUD. The
+      physical path is flavour on top, never the only way to act
+- [x] **Sound**: shuffle, deal, flip, fold, chip push, chip collect and pot
+      push, from Kenney's CC0 casino pack, plus a synthesised room murmur
+      underneath. All derived from the difference between one snapshot and the
+      next, so a cue cannot fire twice for one event or be missed because two
+      patches were coalesced. Volume and mute are in the Escape menu and are
+      separate from everyone's voices
+
+Known boundaries left to later phases, on purpose:
+
+- **It is not pretty yet.** Cards are drawn on a canvas atlas, chips are
+  cylinders with a flat colour, and the table is still primitives. Phase 5
+  bakes the RevK card atlas, dresses the table, and swaps the avatars for the
+  Quaternius bodies. The card atlas's *grid* is the contract that has to
+  survive that swap, and it is the part `cardAtlas.test.ts` pins down.
+- **Sound files are Ogg Vorbis only.** Safari has supported it since 17.4, and
+  a clip that will not decode costs that clip and nothing else, but the browser
+  matrix is a phase-6 job and this is on its list.
+- **The peek is not visible to anyone else.** Lifting your cards is a local
+  affordance; nobody across the table sees you do it. Broadcasting the gesture
+  would be presence, which is worth having, and it is a protocol change rather
+  than a scene one.
+- Chip piles cap at 24 chips, so a stack past a few thousand is drawn in 500s
+  and eventually truncates. The number beside it is always exact.
+
+Next: **phase 5, visual polish** — the dressed table, baked lighting, the RevK
+card atlas, the Quaternius avatar bodies, and UI in funky premium casino
+styling. See `plan.md`.

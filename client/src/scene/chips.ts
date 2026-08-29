@@ -20,12 +20,19 @@ export const CHIP_RADIUS = 0.0195;
 export const CHIP_THICKNESS = 0.0038;
 
 /**
- * Denominations, descending. Chosen against the table's actual stakes -
- * `SMALL_BLIND` 5 and `BIG_BLIND` 10 - so every legal amount is a whole
- * number of chips with no 1s needed, and a starting stack of 1000 reads as ten
- * hundreds rather than as two opaque plaques.
+ * Denominations, descending.
+ *
+ * Sized against the table's actual stakes - `SMALL_BLIND` 5 and `BIG_BLIND`
+ * 10 - so a starting stack of 1000 reads as ten hundreds rather than as two
+ * opaque plaques, and a blind is one chip.
+ *
+ * The 1 is there for one reason, and it is not a rounding convenience: **a
+ * split pot does not divide evenly.** Three players splitting a pot of 65 get
+ * 21, 22 and 22, and from that moment every stack at the table is off the
+ * five. Without a 1 chip those stacks could not be drawn exactly, and the
+ * picture would quietly disagree with the number for the rest of the session.
  */
-export const DENOMINATIONS = [500, 100, 25, 5] as const;
+export const DENOMINATIONS = [500, 100, 25, 5, 1] as const;
 export type Denomination = (typeof DENOMINATIONS)[number];
 
 /** Classic card-room colours, which is the one place tradition is legible. */
@@ -34,6 +41,7 @@ export const CHIP_COLOURS: Record<Denomination, string> = {
   100: "#1b1e26",
   25: "#1f7a4a",
   5: "#b8352f",
+  1: "#d8d3c6",
 };
 
 /**
@@ -53,11 +61,12 @@ export const MAX_CHIPS_PER_PILE = 24;
  * tower: 1000 is ten hundreds, 3000 is six five-hundreds, and 985 is nine
  * hundreds, three quarters and two fives.
  *
- * The total always equals `amount` exactly when `amount` is a multiple of the
- * smallest denomination, which every legal amount at these stakes is. An
- * amount that is not lands its remainder on the floor rather than inventing a
- * chip, and `chipValue` will therefore read low - the number on screen, which
- * comes straight from the server, is the one that counts.
+ * The total equals `amount` exactly for every whole number of chips, because
+ * the smallest denomination is 1 - see the note on `DENOMINATIONS` for why
+ * that matters. The one exception is an amount so large that even 500s
+ * overflow the pile cap, which truncates: `chipValue` then reads low, and the
+ * number on screen, which comes straight from the server, is the one that
+ * counts.
  */
 export function chipBreakdown(
   amount: number,
@@ -67,7 +76,7 @@ export function chipBreakdown(
 
   // Try the smallest base first: it gives the most chips, which is the most
   // legible pile, and the first one that fits inside the cap wins.
-  for (let base = DENOMINATIONS.length - 1; base >= 0; base--) {
+  for (let base = LARGEST_BASE_INDEX; base >= 0; base--) {
     const chips = greedyFrom(amount, base);
     if (chips.length <= maxChips) return chips;
   }
@@ -76,6 +85,20 @@ export function chipBreakdown(
   // leaves the frame.
   return greedyFrom(amount, 0).slice(0, maxChips);
 }
+
+/**
+ * The smallest denomination a pile may be *built* from, as opposed to made
+ * change in.
+ *
+ * The 1 chip exists to pay out the odd chip of a split pot exactly, and that
+ * is all it is for. Letting it be a base as well would draw the small blind as
+ * five white chips instead of one red one - technically the same money, and
+ * wrong in the way that matters, because a blind is one chip at every table
+ * anybody has ever sat at. So the base search stops at the small blind, and
+ * anything below it can only ever turn up as the remainder.
+ */
+const SMALLEST_BASE_DENOMINATION = 5;
+const LARGEST_BASE_INDEX = DENOMINATIONS.indexOf(SMALLEST_BASE_DENOMINATION);
 
 function greedyFrom(amount: number, base: number): Denomination[] {
   const chips: Denomination[] = [];

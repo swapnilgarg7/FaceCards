@@ -202,20 +202,23 @@ export function TableCard({
     node.visible = visible;
   });
 
-  // A peeked card shows its face; a card at rest shows whatever the server
-  // told this client, which for every other seat is nothing at all.
-  const slot = faceSlot;
-
   return (
     <mesh
       ref={mesh}
-      geometry={cardGeometry(slot)}
+      // The face is chosen here, in the geometry, and `faceSlot` is whatever
+      // the server told this client - which for every other seat is nothing
+      // at all, and resolves to the back.
+      geometry={cardGeometry(faceSlot)}
       material={cardMaterial()}
       rotation-order="YXZ"
-      castShadow
-      // Cards are thin and lie on a surface that already has a contact
-      // shadow under it. Receiving one would only ever darken a face we are
-      // asking people to read.
+      // Neither cast nor received, and the cast is the one that matters. A
+      // card is 1.6mm thick and lies flush on felt that already has the
+      // table's own contact shadow on it, so its shadow is invisible - but
+      // seventeen of them are seventeen extra objects in the shadow pass,
+      // which doubles what phase 4 costs in draw calls for nothing anybody
+      // can see. Receiving one would only ever darken a face people are being
+      // asked to read.
+      castShadow={false}
       receiveShadow={false}
     />
   );
