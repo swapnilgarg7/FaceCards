@@ -5,9 +5,11 @@ import {
   Track,
   VideoPresets,
   VideoQuality,
+  type Participant,
   type RemoteParticipant,
   type RemoteTrack,
   type RemoteTrackPublication,
+  type TrackPublication,
 } from "livekit-client";
 import type {
   MediaConnectionState,
@@ -83,10 +85,15 @@ export class LiveKitProvider implements MediaProvider {
     new Set();
   private readonly goneListeners: Emitter<[string]> = new Set();
   private readonly speakingListeners: Emitter<[string, boolean]> = new Set();
+  private readonly muteListeners: Emitter<[string, TrackKind, boolean]> =
+    new Set();
   private readonly stateListeners: Emitter<[MediaConnectionState]> = new Set();
   private readonly audioBlockedListeners: Emitter<[boolean]> = new Set();
 
   private speakingNow = new Set<string>();
+
+  /** peerId -> currently muted kinds, so a late subscriber can be replayed. */
+  private readonly mutedNow = new Map<string, Set<TrackKind>>();
 
   async connect(credentials: MediaCredentials): Promise<void> {
     if (this.room) await this.disconnect();
@@ -178,6 +185,18 @@ export class LiveKitProvider implements MediaProvider {
     return subscribe(this.speakingListeners, cb);
   }
 
+  onRemoteMute(
+    cb: (peerId: string, kind: TrackKind, muted: boolean) => void,
+  ): Unsubscribe {
+    // Replay, for the same reason onRemoteVideo replays: the scene mounts
+    // after connect, and a peer who muted before then would otherwise show a
+    // live face plane over a dead track until they toggled it again.
+    for (const [peerId, kinds] of this.mutedNow) {
+      for (const kind of kinds) cb(peerId, kind, true);
+    }
+    return subscribe(this.muteListeners, cb);
+  }
+
   onConnectionState(cb: (state: MediaConnectionState) => void): Unsubscribe {
     return subscribe(this.stateListeners, cb);
   }
@@ -219,6 +238,8 @@ export class LiveKitProvider implements MediaProvider {
       .on(RoomEvent.TrackUnsubscribed, this.handleTrackUnsubscribed)
       .on(RoomEvent.ParticipantDisconnected, this.handleParticipantGone)
       .on(RoomEvent.ActiveSpeakersChanged, this.handleActiveSpeakers)
+      .on(RoomEvent.TrackMuted, this.handleTrackMuted)
+      .on(RoomEvent.TrackUnmuted, this.handleTrackUnmuted)
       .on(RoomEvent.ConnectionStateChanged, this.handleConnectionState)
       .on(RoomEvent.AudioPlaybackStatusChanged, this.handleAudioPlayback);
   }
@@ -298,6 +319,13 @@ export class LiveKitProvider implements MediaProvider {
     if (this.speakingNow.delete(peerId)) {
       emit(this.speakingListeners, peerId, false);
     }
+    // Clear mute state too, or a peer who left muted comes back muted after
+    // rejoining with a live track.
+    const muted = this.mutedNow.get(peerId);
+    if (muted) {
+      for (const kind of muted) emit(this.muteListeners, peerId, kind, false);
+      this.mutedNow.delete(peerId);
+    }
     emit(this.goneListeners, peerId);
   }
 
@@ -313,6 +341,50 @@ export class LiveKitProvider implements MediaProvider {
     }
     this.speakingNow = next;
   };
+
+  private readonly handleTrackMuted = (
+    publication: TrackPublication,
+    participant: Participant,
+  ): void => {
+    this.setRemoteMute(publication, participant, true);
+  };
+
+  private readonly handleTrackUnmuted = (
+    publication: TrackPublication,
+    participant: Participant,
+  ): void => {
+    this.setRemoteMute(publication, participant, false);
+  };
+
+  private setRemoteMute(
+    publication: TrackPublication,
+    participant: Participant,
+    muted: boolean,
+  ): void {
+    // The local participant's own mute state is already owned by the UI that
+    // toggled it, and reporting it here would make "remote" a lie.
+    if (participant.identity === this.room?.localParticipant.identity) return;
+
+    const kind: TrackKind | null =
+      publication.kind === Track.Kind.Video
+        ? "video"
+        : publication.kind === Track.Kind.Audio
+          ? "audio"
+          : null;
+    if (!kind) return;
+
+    const peerId = participant.identity;
+    let kinds = this.mutedNow.get(peerId);
+    if (!kinds) {
+      kinds = new Set();
+      this.mutedNow.set(peerId, kinds);
+    }
+    if (muted ? kinds.has(kind) : !kinds.has(kind)) return;
+    if (muted) kinds.add(kind);
+    else kinds.delete(kind);
+
+    emit(this.muteListeners, peerId, kind, muted);
+  }
 
   private readonly handleConnectionState = (state: ConnectionState): void => {
     const mapped: Record<ConnectionState, MediaConnectionState> = {

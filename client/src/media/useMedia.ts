@@ -22,6 +22,10 @@ export interface UseMedia {
   remotes: Map<string, HTMLVideoElement>;
   localVideo: HTMLVideoElement | null;
   speaking: Set<string>;
+  /** peerIds whose mic is muted. Not the same as having no audio track. */
+  remoteMicMuted: Set<string>;
+  /** peerIds whose camera is off. Their face plane shows a placeholder. */
+  remoteCameraOff: Set<string>;
   micMuted: boolean;
   cameraOff: boolean;
   audioBlocked: boolean;
@@ -39,6 +43,10 @@ export function useMedia(token: MediaTokenPayload | null): UseMedia {
   );
   const [localVideo, setLocalVideo] = useState<HTMLVideoElement | null>(null);
   const [speaking, setSpeaking] = useState<Set<string>>(new Set());
+  const [remoteMicMuted, setRemoteMicMuted] = useState<Set<string>>(new Set());
+  const [remoteCameraOff, setRemoteCameraOff] = useState<Set<string>>(
+    new Set(),
+  );
   const [micMuted, setMicMuted] = useState(false);
   const [cameraOff, setCameraOff] = useState(false);
   const [audioBlocked, setAudioBlocked] = useState(false);
@@ -75,6 +83,17 @@ export function useMedia(token: MediaTokenPayload | null): UseMedia {
           return next;
         });
       }),
+      provider.onRemoteMute((peerId, kind, muted) => {
+        const apply = (prev: Set<string>) => {
+          if (muted === prev.has(peerId)) return prev;
+          const next = new Set(prev);
+          if (muted) next.add(peerId);
+          else next.delete(peerId);
+          return next;
+        };
+        if (kind === "audio") setRemoteMicMuted(apply);
+        else setRemoteCameraOff(apply);
+      }),
       provider.onConnectionState(setState),
       provider.onAudioBlocked(setAudioBlocked),
     ];
@@ -106,6 +125,8 @@ export function useMedia(token: MediaTokenPayload | null): UseMedia {
       setRemotes(new Map());
       setLocalVideo(null);
       setSpeaking(new Set());
+      setRemoteMicMuted(new Set());
+      setRemoteCameraOff(new Set());
     };
   }, [token]);
 
@@ -137,6 +158,8 @@ export function useMedia(token: MediaTokenPayload | null): UseMedia {
     remotes,
     localVideo,
     speaking,
+    remoteMicMuted,
+    remoteCameraOff,
     micMuted,
     cameraOff,
     audioBlocked,

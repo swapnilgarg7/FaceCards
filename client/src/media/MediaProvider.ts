@@ -11,8 +11,9 @@
  * keep that cost bounded is to keep the surface this small. It is an afternoon
  * now and a rewrite once six modules import the SDK directly.
  *
- * Phase 1 will bind these elements to `THREE.VideoTexture` on avatar face
- * planes without touching this file.
+ * The scene binds these elements to `THREE.VideoTexture` on avatar face planes
+ * in `client/src/avatars/useFaceTexture.ts`, and did so without this file
+ * having to change, which is the boundary earning its keep.
  */
 
 export type TrackKind = "audio" | "video";
@@ -74,6 +75,18 @@ export interface MediaProvider {
   setQuality(peerId: string, q: "high" | "medium" | "low"): void;
 
   onSpeaking(cb: (peerId: string, speaking: boolean) => void): Unsubscribe;
+
+  /**
+   * Remote mute state, which is not the same thing as an absent track: a
+   * muted camera stays subscribed and simply stops producing frames, so
+   * without this the avatar's face plane freezes on the last frame instead of
+   * falling back to a placeholder. Spec section 7 also wants a mute icon on
+   * the avatar's chest, and this is where that state comes from.
+   */
+  onRemoteMute(
+    cb: (peerId: string, kind: TrackKind, muted: boolean) => void,
+  ): Unsubscribe;
+
   onConnectionState(cb: (state: MediaConnectionState) => void): Unsubscribe;
 
   /**

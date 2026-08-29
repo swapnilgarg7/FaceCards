@@ -9,8 +9,9 @@ import { useEffect, useRef } from "react";
  * and visibility, so an element parked off-screen stays on the lowest layer.
  * Putting it where the user actually sees it is what upgrades the quality.
  *
- * Phase 1 replaces this component with a face plane, and the element it is
- * handed does not change.
+ * Remote faces are avatar face planes now, so what is left for this component
+ * is the local self-view: you have no avatar, because you are sitting in that
+ * seat, and someone still has to be able to frame their own face.
  */
 export function VideoTile({
   el,

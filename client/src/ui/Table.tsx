@@ -1,13 +1,16 @@
 import { MAX_PLAYERS } from "@facecards/shared";
 import type { UseMedia } from "../media/useMedia.js";
 import type { RoomSnapshot } from "../net/useRoom.js";
+import { Room3D } from "../scene/Room3D.js";
 import { VideoTile } from "./VideoTile.js";
 
 /**
- * Phase-0 "table": a video grid, the shared counter, and the seat list.
+ * The table: a full-bleed 3D room with a thin HUD floating over it.
  *
- * There is no 3D here on purpose. Phase 0's job is to prove the plumbing;
- * phase 1 replaces this whole view with the R3F scene and keeps the hooks.
+ * The HUD is deliberately sparse. Everything it could show about a player -
+ * who they are, whether they are talking, whether they are muted - is already
+ * on their avatar, and every element added here is one more thing competing
+ * with the faces, which are the product.
  */
 export function Table({
   snapshot,
@@ -23,25 +26,34 @@ export function Table({
   onLeave(): void;
 }) {
   const shareUrl = `${window.location.origin}/?room=${snapshot.code}`;
-  const me = snapshot.players.find((p) => p.sessionId === sessionId);
 
   return (
-    <main className="table">
-      <header className="table__header">
-        <div>
-          <h1>
-            Room <code className="code">{snapshot.code}</code>
-          </h1>
+    <main className="room">
+      <div className="room__scene">
+        <Room3D
+          players={snapshot.players}
+          sessionId={sessionId}
+          media={media}
+        />
+      </div>
+
+      <header className="hud hud--top">
+        <div className="hud__group">
+          <span className="hud__code">{snapshot.code}</span>
           <button
             className="btn btn--ghost"
             onClick={() => void navigator.clipboard?.writeText(shareUrl)}
           >
-            Copy invite link
+            Copy invite
           </button>
+          <span className="hud__meta">
+            {snapshot.players.length}/{MAX_PLAYERS} seated · {media.state}
+          </span>
         </div>
-        <div className="table__controls">
+
+        <div className="hud__group">
           <button className="btn" onClick={() => void media.toggleMic()}>
-            {media.micMuted ? "Unmute mic" : "Mute mic"}
+            {media.micMuted ? "Unmute" : "Mute"}
           </button>
           <button className="btn" onClick={() => void media.toggleCamera()}>
             {media.cameraOff ? "Camera on" : "Camera off"}
@@ -53,70 +65,43 @@ export function Table({
       </header>
 
       {media.audioBlocked && (
-        // Browsers block playback until a gesture. Solved here rather than in
-        // phase 5, because it is a one-line fix now and a mystery later.
-        <button className="banner" onClick={() => void media.startAudio()}>
+        <button
+          className="banner hud__banner"
+          onClick={() => void media.startAudio()}
+        >
           Click to enable sound
         </button>
       )}
-      {media.error && <p className="banner banner--error">{media.error}</p>}
+      {media.error && (
+        <p className="banner banner--error hud__banner">{media.error}</p>
+      )}
 
-      <section className="grid">
+      {/* Self-view. You have no avatar, because you are sitting in that seat,
+          and this is also where someone frames their own face - which is what
+          makes the crop on everyone else's avatar look right. */}
+      <div className="hud hud--self">
         <VideoTile
           el={media.localVideo}
-          label={`${me?.displayName ?? "You"} (you)`}
+          label="You"
           mirrored
           muted={media.micMuted}
           cameraOff={media.cameraOff}
           speaking={sessionId ? media.speaking.has(sessionId) : false}
         />
-        {snapshot.players
-          .filter((p) => p.sessionId !== sessionId)
-          .map((p) => (
-            <VideoTile
-              key={p.sessionId}
-              el={media.remotes.get(p.sessionId) ?? null}
-              label={`${p.displayName} · seat ${p.seat + 1}`}
-              speaking={media.speaking.has(p.sessionId)}
-            />
-          ))}
-      </section>
+      </div>
 
-      <section className="panel">
-        <h2>Shared state</h2>
-        <p className="counter">{snapshot.counter}</p>
-        <button className="btn btn--primary" onClick={onBump}>
+      {/* Phase-0 plumbing proof, kept until real poker state replaces it in
+          phase 2. It is the cheapest possible check that server state still
+          reaches both tabs. */}
+      <footer className="hud hud--bottom">
+        <button className="btn btn--ghost" onClick={onBump}>
           Bump
         </button>
-        <p className="note">
-          {snapshot.lastBumpBy
-            ? `Last bumped by ${snapshot.lastBumpBy}`
-            : "Nobody has bumped yet"}
-        </p>
-        <p className="note">
-          The client sends an intent with no number in it. The server owns the
-          value, and both tabs are showing what it decided.
-        </p>
-      </section>
-
-      <section className="panel">
-        <h2>
-          Seats ({snapshot.players.length}/{MAX_PLAYERS}) · media {media.state}
-        </h2>
-        <ul className="seats">
-          {snapshot.players.map((p) => (
-            <li key={p.sessionId}>
-              <strong>seat {p.seat + 1}</strong> {p.displayName}
-              {p.sessionId === sessionId && " (you)"}
-              {/* Present for you, absent for everyone else. Not hidden by
-                  this component: genuinely not in the other client's data. */}
-              <span className="private">
-                {p.privateNote ?? "private field not in this payload"}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </section>
+        <span className="hud__meta">
+          {snapshot.counter}
+          {snapshot.lastBumpBy && ` · ${snapshot.lastBumpBy}`}
+        </span>
+      </footer>
     </main>
   );
 }

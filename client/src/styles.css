@@ -107,25 +107,93 @@ h2 {
   background: transparent;
 }
 
-.table {
-  max-width: 68rem;
-  margin: 0 auto;
-  padding: 1.5rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
+/* The 3D room fills the viewport; the HUD floats over it. Anything given a
+   background here is one more thing competing with the faces, so the HUD is
+   mostly transparent by design. */
+.room {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
 }
-.table__header {
+.room__scene {
+  position: absolute;
+  inset: 0;
+}
+.room__scene canvas {
+  display: block;
+  /* The camera reads cursor position off this element, so it must receive
+     pointer events even where a HUD sits on top of it. */
+  touch-action: none;
+}
+
+.hud {
+  position: absolute;
   display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  /* Transparent to the pointer, so moving toward a button does not drag the
+     view with it. Children opt back in. */
+  pointer-events: none;
+}
+.hud > *,
+.hud button {
+  pointer-events: auto;
+}
+.hud--top {
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 0.9rem 1.1rem;
   justify-content: space-between;
-  align-items: flex-start;
-  gap: 1rem;
   flex-wrap: wrap;
 }
-.table__controls {
+.hud--bottom {
+  bottom: 0.9rem;
+  left: 1.1rem;
+}
+.hud--self {
+  bottom: 0.9rem;
+  right: 1.1rem;
+  width: 12rem;
+}
+.hud--self .tile {
+  width: 100%;
+  backdrop-filter: blur(6px);
+}
+.hud__group {
   display: flex;
   gap: 0.5rem;
+  align-items: center;
   flex-wrap: wrap;
+  pointer-events: none;
+}
+.hud__code {
+  padding: 0.45rem 0.7rem;
+  border-radius: 6px;
+  background: rgba(16, 19, 25, 0.7);
+  color: var(--accent);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+}
+.hud__meta {
+  padding: 0.45rem 0.6rem;
+  border-radius: 6px;
+  background: rgba(16, 19, 25, 0.55);
+  color: var(--dim);
+  font-size: 0.8rem;
+}
+.hud__banner {
+  position: absolute;
+  top: 4.2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(16, 19, 25, 0.9);
+  z-index: 2;
+}
+
+.hud .btn {
+  background: rgba(28, 32, 41, 0.78);
+  backdrop-filter: blur(6px);
 }
 
 .code {
