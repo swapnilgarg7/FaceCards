@@ -236,6 +236,11 @@ export function Room3D({
               speaking={media.speaking.has(player.sessionId)}
               micMuted={media.remoteMicMuted.has(player.sessionId)}
               cameraOff={media.remoteCameraOff.has(player.sessionId)}
+              // The table is waiting on this seat. Drawn over their head as
+              // well as on their rail plaque, because the plaque is a number
+              // you have to already be looking at and the question "whose turn
+              // is it" is asked from wherever you happen to be looking.
+              acting={snapshot.actingSeat === player.seat}
               // Their seat is being held through a reconnection window. The
               // body stays put, drained, so the chair does not read as free.
               away={!player.connected}

@@ -91,6 +91,68 @@ export function speakingRingTexture(): THREE.CanvasTexture {
   return ringMask;
 }
 
+let turnMarker: THREE.CanvasTexture | null = null;
+
+/**
+ * The "this player is on the clock" marker, floating over their head.
+ *
+ * An alpha mask rather than a coloured glyph, so the material can carry the
+ * brass and the marker belongs to the same palette as the rail plaque and the
+ * standings row that say the same thing. All three are brass on purpose: it is
+ * one piece of information, and giving it three colours would make it three.
+ *
+ * The shape is what separates it from the speaking halo, which is the other
+ * thing that lights up on a head. That is a soft ring *behind the face*; this
+ * is a hard caret *above the skull*, pointing down at whose turn it is. Two
+ * signals that can both be true at once have to differ in form, not in hue,
+ * because from four metres away a player reads shape long before they read a
+ * shade of gold.
+ *
+ * Drawn pointing down the +Y of the texture, which is down the screen: the
+ * quad it lands on is billboarded upright, so the caret points at the head
+ * underneath it from wherever you happen to be sitting.
+ */
+export function turnMarkerTexture(): THREE.CanvasTexture {
+  if (turnMarker) return turnMarker;
+
+  const [el, ctx] = canvas(128);
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, 128, 128);
+
+  // A soft pool behind the glyph, so the caret reads against a dark jacket
+  // and a lit felt alike rather than only against one of them.
+  const pool = ctx.createRadialGradient(64, 58, 4, 64, 58, 62);
+  pool.addColorStop(0, "rgba(255,255,255,0.5)");
+  pool.addColorStop(0.55, "rgba(255,255,255,0.16)");
+  pool.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = pool;
+  ctx.fillRect(0, 0, 128, 128);
+
+  // The caret. Feathered by a couple of pixels for the same reason the face
+  // mask is: a hard edge on a quad this small aliases into a sparkle as the
+  // head moves under it.
+  ctx.filter = "blur(2px)";
+  ctx.fillStyle = "#fff";
+  ctx.beginPath();
+  ctx.moveTo(30, 34);
+  ctx.lineTo(98, 34);
+  ctx.lineTo(64, 100);
+  ctx.closePath();
+  ctx.fill();
+  // Hollowed out, so it reads as a chevron rather than as a blob at distance.
+  ctx.globalCompositeOperation = "destination-out";
+  ctx.beginPath();
+  ctx.moveTo(48, 46);
+  ctx.lineTo(80, 46);
+  ctx.lineTo(64, 78);
+  ctx.closePath();
+  ctx.fill();
+  ctx.globalCompositeOperation = "source-over";
+
+  turnMarker = mask(el);
+  return turnMarker;
+}
+
 let muteGlyph: THREE.CanvasTexture | null = null;
 
 /** Mic with a slash. Sits on the avatar's chest (spec section 7). */

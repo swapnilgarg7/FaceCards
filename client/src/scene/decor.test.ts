@@ -11,6 +11,13 @@ import {
   neonBreath,
 } from "./decor.js";
 import { TABLE, SEAT_OUTSET, EYE_HEIGHT } from "./layout.js";
+import {
+  HEAD_RADIUS,
+  HEAD_SCALE,
+  TURN_MARKER_FLOAT,
+  TURN_MARKER_RISE,
+  TURN_MARKER_SIZE,
+} from "./body.js";
 import { RAIL_OUTER } from "./tableProfile.js";
 
 describe("nothing that glows sits in the face band", () => {
@@ -43,6 +50,36 @@ describe("nothing that glows sits in the face band", () => {
       }),
     ).toBe(false);
     expect(band.high - band.low).toBeGreaterThan(0.4);
+  });
+});
+
+describe("the turn marker floats over a head, not across a face", () => {
+  // The marker is a lit quad on a body rather than a fixture on a wall, so it
+  // is not in `FIXTURES` - but the rule it has to obey is the same one, for
+  // the same reason: from any seat there is somebody sitting behind the player
+  // on the clock, and a glowing caret at their eye height lands on that
+  // person's face. This is the only file that can see both the band and the
+  // bodies, so the check lives here.
+  const bottom = () =>
+    EYE_HEIGHT + TURN_MARKER_RISE - TURN_MARKER_SIZE / 2 - TURN_MARKER_FLOAT;
+
+  it("keeps its lowest edge clear of the face band", () => {
+    expect(bottom()).toBeGreaterThan(faceBand().high);
+  });
+
+  it("clears the tallest thing anybody can be wearing", () => {
+    // The worst head and the worst head piece in `archetypes.ts`, taken
+    // together even though no archetype has both: a 1.16-stretched skull, and
+    // the 0.32m cone drawn from `headTopY + height / 2 - 0.03`.
+    const tallestHead = HEAD_RADIUS * HEAD_SCALE.y * 1.16;
+    const tallestPiece = 0.32 - 0.03;
+    expect(bottom() - EYE_HEIGHT).toBeGreaterThan(tallestHead + tallestPiece);
+  });
+
+  it("stays under the ceiling it hangs in", () => {
+    expect(EYE_HEIGHT + TURN_MARKER_RISE + TURN_MARKER_SIZE / 2).toBeLessThan(
+      ROOM_HEIGHT,
+    );
   });
 });
 

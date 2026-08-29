@@ -6,6 +6,7 @@ import {
   minBuyIn,
 } from "@facecards/shared";
 import type { RoomSnapshot, SeatSnapshot } from "../net/useRoom.js";
+import { Kbd } from "./Kbd.js";
 import {
   buyInProblemText,
   clampChips,
@@ -35,7 +36,34 @@ import {
  *
  * The buy-in control lives at the bottom of the same panel, because reaching
  * for more chips is the action the numbers above it provoke.
+ *
+ * It can be put away, and remembers that it was. The panel answers a question
+ * people ask between hands, and during one it is a slab of text over the seat
+ * to your left; the product is the faces, so anything this size has to be
+ * something a player can dismiss. Collapsed it leaves a single chip behind
+ * rather than disappearing, because a panel with no way back is a panel nobody
+ * risks closing.
  */
+
+const OPEN_KEY = "facecards.standings.open";
+
+export function loadStandingsOpen(): boolean {
+  try {
+    // Absent means open: the first evening should show the thing, and the
+    // preference only exists once somebody has expressed one.
+    return window.localStorage.getItem(OPEN_KEY) !== "false";
+  } catch {
+    return true;
+  }
+}
+
+export function saveStandingsOpen(open: boolean): void {
+  try {
+    window.localStorage.setItem(OPEN_KEY, String(open));
+  } catch {
+    // Not worth surfacing: the choice still holds for this session.
+  }
+}
 
 const NOTE_LABELS: Record<SeatNote, string> = {
   away: "reconnecting",
@@ -61,15 +89,32 @@ export function Leaderboard({
   snapshot,
   sessionId,
   me,
+  open,
+  onOpenChange,
   onBuyIn,
 }: {
   snapshot: RoomSnapshot;
   sessionId: string | null;
   me: SeatSnapshot | undefined;
+  /** Whether the panel is showing. Owned by `Table`, which also holds the key. */
+  open: boolean;
+  onOpenChange(open: boolean): void;
   onBuyIn(amount: number): void;
 }) {
   const rows = leaderboard(snapshot, sessionId);
   const felt = contestedChips(snapshot);
+
+  if (!open) {
+    return (
+      <button
+        className="board__peg"
+        onClick={() => onOpenChange(true)}
+        aria-expanded={false}
+      >
+        Standings <Kbd bind="standings" />
+      </button>
+    );
+  }
 
   return (
     <aside className="board" aria-label="Standings">
@@ -78,6 +123,15 @@ export function Leaderboard({
         {snapshot.handNumber > 0 && (
           <span className="board__hand">Hand {snapshot.handNumber}</span>
         )}
+        <button
+          className="board__hide"
+          onClick={() => onOpenChange(false)}
+          aria-expanded
+          aria-label="Hide the standings"
+          title="Hide the standings"
+        >
+          Hide <Kbd bind="standings" />
+        </button>
       </header>
 
       <div className="board__cols" aria-hidden="true">

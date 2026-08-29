@@ -18,6 +18,9 @@ import {
   TORSO_DEPTH,
   TORSO_LENGTH,
   TORSO_RADIUS,
+  TURN_MARKER_FLOAT,
+  TURN_MARKER_RISE,
+  TURN_MARKER_SIZE,
   bodyGeometry,
 } from "../scene/body.js";
 import { HALO_SCALE } from "../scene/decor.js";
@@ -33,6 +36,7 @@ import {
   muteGlyphTexture,
   namePlateTexture,
   speakingRingTexture,
+  turnMarkerTexture,
 } from "./textures.js";
 
 /**
@@ -125,6 +129,14 @@ export interface AvatarProps {
   micMuted: boolean;
   cameraOff: boolean;
   /**
+   * This seat is the one the table is waiting on.
+   *
+   * Straight off `actingSeat`, like everything else here: the avatar draws a
+   * marker over whoever the server says is on the clock and has no opinion
+   * about whether that is right.
+   */
+  acting: boolean;
+  /**
    * Dropped, and inside their reconnection window. The seat is still theirs
    * and their chips are still in the pot, so the body stays; what changes is
    * that it reads as unoccupied rather than as someone sitting very still.
@@ -143,6 +155,7 @@ export function Avatar({
   speaking,
   micMuted,
   cameraOff,
+  acting,
   away,
 }: AvatarProps) {
   const {
@@ -160,6 +173,7 @@ export function Avatar({
   const faceMask = faceMaskTexture();
   const ringMask = speakingRingTexture();
   const plate = useMemo(() => namePlateTexture(displayName), [displayName]);
+  const turnMask = turnMarkerTexture();
 
   // The whole body hangs off this seat's eye-line, so nothing can drift out
   // of proportion with the face plane it has to sit under. Memoised on the one
@@ -175,6 +189,9 @@ export function Avatar({
   const headRef = useRef<THREE.Group>(null);
   const torsoRef = useRef<THREE.Mesh>(null);
   const ringRef = useRef<THREE.MeshBasicMaterial>(null);
+  /** The turn marker's group, billboarded, and its material, faded. */
+  const markerRef = useRef<THREE.Group>(null);
+  const markerMatRef = useRef<THREE.MeshBasicMaterial>(null);
   const seated = useRef(false);
   const phase = useMemo(() => seat.index * 1.7, [seat.index]);
   /** The framing on screen, as opposed to the one last measured. */
@@ -284,6 +301,44 @@ export function Avatar({
       faceTexture.offset.set(crop.offsetX, crop.offsetY);
     }
 
+    // The turn marker. Billboarded about the vertical only, so it turns to
+    // face you without ever tipping: a caret that leans is a caret that has
+    // stopped pointing at a head.
+    //
+    // The yaw is worked out against the camera rather than copied off its
+    // quaternion, because this group hangs under a root that is already turned
+    // by `seat.yaw`, and it is cheaper to subtract that angle than to convert
+    // in and out of world space every frame for six avatars.
+    const marker = markerRef.current;
+    if (marker && root) {
+      const toCamera = Math.atan2(
+        state.camera.position.x - root.position.x,
+        state.camera.position.z - root.position.z,
+      );
+      marker.rotation.y = toCamera - root.rotation.y;
+      // A slow rise and fall, on the same phase offset as the idle, so six
+      // markers never pulse in lockstep. Motion is what makes it findable in
+      // peripheral vision without it having to be bright.
+      marker.position.y =
+        seat.eyeY + TURN_MARKER_RISE + Math.sin(t * 1.6) * TURN_MARKER_FLOAT;
+    }
+
+    const markerMat = markerMatRef.current;
+    if (markerMat) {
+      // Faded rather than switched, for the reason the halo below is: the
+      // clock passes from seat to seat several times a hand, and a marker that
+      // popped would read as a glitch rather than as a turn changing hands.
+      markerMat.opacity = THREE.MathUtils.damp(
+        markerMat.opacity,
+        acting ? 1 : 0,
+        9,
+        delta,
+      );
+      // Culled once it is invisible: five of six avatars are not on the clock
+      // at any moment, and a transparent quad still costs a draw call.
+      markerMat.visible = markerMat.opacity > 0.01;
+    }
+
     const ring = ringRef.current;
     if (ring) {
       // Damped rather than switched, so a halo fades in with the voice
@@ -316,6 +371,33 @@ export function Avatar({
         derived. Rolling about the seat origin instead would swing a head
         through six centimetres for a two-degree shift of weight.
       */}
+      {/*
+        Whose turn it is, over their head.
+
+        Outside the pose stack on purpose: the marker belongs to the *seat*
+        that is on the clock, not to the body sitting in it, and a caret that
+        swayed and breathed along with a shrug would read as part of the
+        costume. It hangs directly off the root, so it moves across the table
+        when the ring re-flows and does nothing else.
+      */}
+      <group ref={markerRef} position={[0, TURN_MARKER_RISE, 0]}>
+        <mesh>
+          <planeGeometry args={[TURN_MARKER_SIZE, TURN_MARKER_SIZE]} />
+          <meshBasicMaterial
+            ref={markerMatRef}
+            // The same brass as the acting plaque on the rail and the acting
+            // row in the standings. One state, one colour.
+            color="#f2d68c"
+            alphaMap={turnMask}
+            transparent
+            opacity={0}
+            visible={false}
+            depthWrite={false}
+            toneMapped={false}
+          />
+        </mesh>
+      </group>
+
       <group position={[0, PIVOT_Y, 0]}>
         <group ref={poseRef}>
           <group position={[0, -PIVOT_Y, 0]}>

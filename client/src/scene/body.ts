@@ -50,6 +50,30 @@ export const FACE_INSET = HEAD_RADIUS * 0.94;
  * plus a neck. This is the number that was missing before, when the torso
  * simply ran up to eye height and swallowed everyone's jaw.
  */
+/**
+ * The turn marker: how far above the eye-line it floats, and how big it is.
+ *
+ * Both numbers are clearances rather than tastes.
+ *
+ * **The rise** has to clear the tallest thing anybody wears. A head reaches
+ * `HEAD_RADIUS * HEAD_SCALE.y` above the eye-line, and the most stretched
+ * skull in `archetypes.ts` scales that by 1.16, which is 0.174m. The tallest
+ * head piece is the 0.32m cone, drawn from `headTopY + height/2 - 0.03`, so it
+ * reaches a further 0.29m. No single archetype is both, but taking the worst
+ * of each puts a ceiling of 0.464m over the eye-line on anything anybody can
+ * be wearing, and the bottom edge of the marker clears that even at the bottom
+ * of its float: close enough to belong to that head, never inside the hat.
+ *
+ * **The size** then has to keep the marker's *bottom* clear of the face band
+ * (`decor.ts`), because a lit quad at eye height on the far side of the room
+ * is a halo on somebody's face no matter what it is a marker for. Asserted in
+ * `decor.test.ts`, which is the one place that can see both halves.
+ */
+export const TURN_MARKER_SIZE = 0.19;
+export const TURN_MARKER_RISE = 0.62;
+/** How far it drifts up and down. Enough to catch the eye, not enough to bob. */
+export const TURN_MARKER_FLOAT = 0.018;
+
 export const SHOULDER_DROP = 0.23;
 
 export const TORSO_RADIUS = 0.2;

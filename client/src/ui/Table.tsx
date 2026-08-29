@@ -9,7 +9,11 @@ import { ActionBar } from "./ActionBar.js";
 import { FaceDebug } from "./FaceDebug.js";
 import { HandHud } from "./HandHud.js";
 import { Kbd } from "./Kbd.js";
-import { Leaderboard } from "./Leaderboard.js";
+import {
+  Leaderboard,
+  loadStandingsOpen,
+  saveStandingsOpen,
+} from "./Leaderboard.js";
 import { PeekHint } from "./PeekHint.js";
 import { SettingsPanel, loadSensitivity } from "./SettingsPanel.js";
 import { ShowdownOverlay } from "./ShowdownOverlay.js";
@@ -71,6 +75,14 @@ export function Table({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sensitivity, setSensitivity] = useState(loadSensitivity);
   const [peeking, setPeeking] = useState(false);
+  // Whether the standings are up. Remembered across sessions, like the look
+  // sensitivity: it is a preference about how much HUD somebody wants over
+  // the room, not a thing about this hand.
+  const [standingsOpen, setStandingsOpen] = useState(loadStandingsOpen);
+  const changeStandings = useCallback((open: boolean) => {
+    setStandingsOpen(open);
+    saveStandingsOpen(open);
+  }, []);
 
   // The table's own sound, derived from the difference between one snapshot
   // and the next. See `audio/cues.ts`: there is no event stream, only state
@@ -127,6 +139,7 @@ export function Table({
   // panel to find them is exactly the wrong moment for it.
   useKeybinds({
     settings: () => setSettingsOpen((open) => !open),
+    standings: () => changeStandings(!standingsOpen),
     mute: () => void media.toggleMic(),
     camera: () => void media.toggleCamera(),
   });
@@ -171,6 +184,7 @@ export function Table({
             <Kbd bind="lookLeft" />
             <Kbd bind="lookDown" />
             <Kbd bind="lookRight" /> look around
+            <Kbd bind="standings" /> standings
             <Kbd bind="settings" /> settings
             <Kbd bind="mute" /> {media.micMuted ? "unmute" : "mute"}
             <Kbd bind="camera" /> camera
@@ -237,11 +251,15 @@ export function Table({
           of your own two cards has moved down to the footer - directly over
           the cards it is a fallback for, rather than in the far corner of the
           screen from them. */}
-      <div className="hud hud--table">
+      <div
+        className={`hud hud--table${standingsOpen ? "" : " hud--table-away"}`}
+      >
         <Leaderboard
           snapshot={snapshot}
           sessionId={sessionId}
           me={me}
+          open={standingsOpen}
+          onOpenChange={changeStandings}
           onBuyIn={onBuyIn}
         />
       </div>

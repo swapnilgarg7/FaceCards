@@ -721,7 +721,12 @@ h2 {
   top: 5.9rem;
   left: 1.1rem;
   bottom: 6rem;
-  width: 19rem;
+  /* Wide enough that a display name is read rather than guessed at. The three
+     numeric columns are fixed, so every millimetre added here goes to the name
+     - and at 19rem the name had about five characters before the ellipsis,
+     which made the one column people actually scan the one column that did not
+     work. */
+  width: 23.5rem;
   flex-direction: column;
   align-items: stretch;
   justify-content: flex-start;
@@ -731,6 +736,14 @@ h2 {
      the scroll lives here rather than on the panel so both stay put. */
   overflow-y: auto;
   overflow-x: hidden;
+}
+/* Put away. The column shrinks to its peg rather than staying a full-height
+   invisible strip down the left of the room, which would go on swallowing
+   clicks meant for the table behind it. */
+.hud--table-away {
+  bottom: auto;
+  width: auto;
+  overflow: visible;
 }
 /* The decision, at the bottom of the middle of the screen - which is where
    this seat's two cards are lying on the felt, and therefore where a player
@@ -1363,11 +1376,53 @@ h2 {
 .board__head {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
   gap: 0.5rem;
 }
 .board__head h2 {
   margin: 0;
+  /* Takes the slack, so the hand number and the hide control sit together on
+     the right rather than drifting apart as the hand count gets longer. */
+  margin-right: auto;
+}
+
+/* Putting the panel away, and getting it back. Quiet: both are chrome on a
+   HUD that is itself meant to stay out of the way, so they read as dim text
+   until the pointer is on them. */
+.board__hide,
+.board__peg {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.45rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--dim);
+  font: inherit;
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.board__hide:hover,
+.board__peg:hover {
+  border-color: var(--line-bright);
+  color: var(--text);
+}
+.board__hide:focus-visible,
+.board__peg:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* The one thing left behind when the panel is closed, so it is always obvious
+   that there is something to open and what opens it. */
+.board__peg {
+  align-self: flex-start;
+  padding: 0.4rem 0.6rem;
+  border-color: var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  backdrop-filter: blur(8px);
 }
 .board__hand {
   color: var(--dim);

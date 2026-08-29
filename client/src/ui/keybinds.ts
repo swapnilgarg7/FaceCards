@@ -34,6 +34,7 @@ export type KeybindId =
   | "raiseMin"
   | "raiseMax"
   | "nextHand"
+  | "standings"
   | "settings"
   | "mute"
   | "camera";
@@ -87,6 +88,11 @@ export const KEYBINDS: readonly Keybind[] = [
   // Only ever live over a payout, where nothing else on this list can fire:
   // there is no seat on the clock to fold, check or raise for.
   { id: "nextHand", key: "Enter", label: "Skip ahead, then deal the next hand" },
+  // The standings are read between hands and are in the way during one, so
+  // they get a key rather than only a button: hiding them has to be as cheap
+  // as glancing at them, or nobody hides them and the panel just sits over the
+  // table forever.
+  { id: "standings", key: "b", label: "Show or hide the standings" },
   { id: "settings", key: "Escape", label: "Settings" },
   { id: "mute", key: "m", label: "Mute or unmute" },
   { id: "camera", key: "v", label: "Camera on or off" },
