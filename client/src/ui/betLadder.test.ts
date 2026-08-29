@@ -11,6 +11,7 @@ function seat(over: Partial<SeatSnapshot> = {}): SeatSnapshot {
     seat: 0,
     connected: true,
     ready: true,
+    readyNext: false,
     sittingOut: false,
     stack: 1000,
     bet: 0,

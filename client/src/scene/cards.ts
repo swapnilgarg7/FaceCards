@@ -83,6 +83,18 @@ export function boardSpot(index: number): CardSpot {
 const HOLE_INSET = 0.17;
 /** Centre-to-centre, so the pair overlaps slightly like a real hand. */
 const HOLE_PITCH = CARD_WIDTH * 0.82;
+/**
+ * How much higher the second card of a pair lies than the first.
+ *
+ * Not decoration - it is the fix for a real artefact. The pair deliberately
+ * overlaps by a fifth of a card, and two cards at *identical* height overlap
+ * as two coplanar surfaces competing for the same pixels: the depth buffer
+ * cannot separate them, so the overlap strobes between the two faces as the
+ * camera moves. A real deck has no such problem because one card is physically
+ * on top of the other, and this is that. A card and a half of paper, so it is
+ * visible to the depth buffer and invisible to a person.
+ */
+const HOLE_STACK_LIFT = CARD_THICKNESS * 1.5;
 
 /**
  * One of a seat's two hole cards, lying on the felt just inside the rail.
@@ -102,7 +114,7 @@ export function holeSpot(seat: Seat, index: number): CardSpot {
 
   return {
     x: outX * forward + rightX * side,
-    y: CARD_REST_Y,
+    y: CARD_REST_Y + index * HOLE_STACK_LIFT,
     z: outZ * forward + rightZ * side,
     yaw: seat.yaw,
   };

@@ -72,6 +72,8 @@ export function clearHand(state: PokerStateInstance, players: PlayersBySeat) {
   for (const player of players.values()) {
     player.bet = 0;
     player.cardCount = 0;
+    // A vote about the hand that just finished, not a standing preference.
+    player.readyNext = false;
     // Cards go back in the box before the next deal, not when the next deal
     // happens. A stale card surviving into the following hand would be a leak
     // of the previous one.

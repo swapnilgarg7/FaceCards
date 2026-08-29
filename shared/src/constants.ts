@@ -72,13 +72,35 @@ export const DEFAULT_BUY_IN = STARTING_STACK;
 export const AUTO_SIT_OUT_TIMEOUTS = 3;
 
 /**
- * How long the result of a hand stays on screen before the next deal.
+ * The *shortest* time a decided hand's result stays on screen.
  *
- * Long enough to read a showdown and say something about it, which is the
- * whole product. The spec's exit criterion is that the next hand starts with
- * no lobby round-trip, not that it starts instantly.
+ * A floor rather than a duration. The showdown is played out on the client -
+ * the run-out flips one card at a time, then each hand that has to show turns
+ * over, then the winner is named - and that ceremony is the part of the
+ * evening people actually talk over. Nothing may deal on top of it, so even a
+ * table where everybody hammers Next round waits this long.
  */
 export const PAYOUT_DISPLAY_MS = 6_000;
+
+/**
+ * The *longest* a result stays up when nobody asks to move on.
+ *
+ * The next hand is dealt when every seat still in the game has pressed Next
+ * round, which is what makes the showdown last as long as the conversation
+ * about it rather than as long as a timer. This is only the backstop for a
+ * table that walked away from its laptops: long enough that reading a
+ * seven-card showdown out loud never gets cut off, short enough that a
+ * forgotten tab does not park the game forever.
+ */
+export const PAYOUT_MAX_MS = 60_000;
+
+/**
+ * Beat between the last player asking for the next round and the deal.
+ *
+ * Not zero: the button they pressed has to be seen to have done something
+ * before the table clears underneath it.
+ */
+export const NEXT_HAND_BEAT_MS = 450;
 
 /** Pause before dealing once a table first has enough players with chips. */
 export const HAND_START_DELAY_MS = 2_000;

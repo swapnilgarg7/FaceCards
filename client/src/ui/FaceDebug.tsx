@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { textureUploadRate } from "../avatars/faceTextureStats.js";
 import type { FaceTrackingStatus } from "../avatars/useFaceTracking.js";
 import type { UseMedia } from "../media/useMedia.js";
 
@@ -69,11 +70,19 @@ export function FaceDebug({
         const h = el.videoHeight;
         // The number this whole overlay was built to surface.
         const starved = w > 0 && h < 400;
+        // The number the *second* freeze taught us to surface. `tex 0/s` on a
+        // peer whose box is arriving means the pixels are frozen and only the
+        // crop window is moving, which is what a paused track and a texture
+        // nobody uploads both look like from the far side of the table.
+        const uploads = textureUploadRate(peerId);
         return (
           <div className="facedebug__row" key={peerId}>
             <b>{peerId.slice(0, 6)}</b>{" "}
             <span className={starved ? "facedebug__warn" : undefined}>
               {w}x{h}
+            </span>{" "}
+            <span className={uploads === 0 ? "facedebug__warn" : undefined}>
+              tex {uploads}/s
             </span>{" "}
             {stat?.box
               ? `box ${fmt(stat.box.cx)},${fmt(stat.box.cy)} h${fmt(

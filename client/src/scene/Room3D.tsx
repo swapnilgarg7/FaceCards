@@ -6,6 +6,7 @@ import type { UseMedia } from "../media/useMedia.js";
 import type { RoomSnapshot } from "../net/useRoom.js";
 import { AttentionDirector, type AttentionPeer } from "./AttentionDirector.js";
 import { ChipField, ChipGrabPad } from "./ChipField.js";
+import { HoloBoard } from "./HoloBoard.js";
 import { PokerTable } from "./PokerTable.js";
 import { RoomShell } from "./RoomShell.js";
 import { SeatPlaques } from "./SeatPlaques.js";
@@ -181,6 +182,13 @@ export function Room3D({
         onPeekChange={onPeekChange}
       />
       <ChipField snapshot={snapshot} placed={placed} preview={betPreview} />
+
+      {/* The same five cards, stood up over the middle of the table and
+          turned to face whoever is looking. The felt still holds the real
+          board - this is the copy you can actually read from a seat, so that
+          nobody has to break eye contact with the table to find out what the
+          turn was. See `holo.ts`. */}
+      <HoloBoard snapshot={snapshot} />
 
       {/* Phase 5: the numbers, on the table instead of in a list. Each seat's
           stack is engraved on the rail in front of it, which from every other

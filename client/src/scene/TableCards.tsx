@@ -205,6 +205,9 @@ export function TableCards({
               arriveKey={arrival?.key}
               delayMs={arrival?.delayMs ?? 0}
               peek={isMe && peeking && !hidden ? 1 : 0}
+              // -1 and +1: the pair opens outwards from the middle rather
+              // than the second card sliding across the first.
+              peekFan={i * 2 - 1}
               seed={player.seat * 17 + i}
             />
           );

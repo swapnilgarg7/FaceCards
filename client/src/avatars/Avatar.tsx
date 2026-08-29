@@ -145,7 +145,11 @@ export function Avatar({
   cameraOff,
   away,
 }: AvatarProps) {
-  const faceTexture = useFaceTexture(videoEl);
+  const {
+    texture: faceTexture,
+    live: faceLive,
+    refresh: refreshFace,
+  } = useFaceTexture(videoEl, peerId);
 
   const look = useMemo(() => avatarLook(avatar), [avatar]);
   // Drained rather than hidden. An empty chair at a real table is still a
@@ -246,6 +250,13 @@ export function Avatar({
     // them into sixty frames of movement. Writing to the texture's own
     // vectors, not to state, for the same reason the breathing above does.
     if (faceTexture && videoEl) {
+      // Hand the frame to the GPU if there is a new one. Nothing else does:
+      // three.js relies on `requestVideoFrameCallback`, which is a callback
+      // about compositing, and these elements are never composited. See
+      // `useFaceTexture.ts` - without this line every remote face is a
+      // photograph with a crop window sliding around on top of it.
+      refreshFace();
+
       const measured = faceBoxes.get(peerId);
       if (measured) {
         // First box snaps. Easing in from a default would show every face
@@ -289,7 +300,11 @@ export function Avatar({
   // A dropped player's track is gone from the SFU too, so the texture would
   // already be null; saying so explicitly means the placeholder does not
   // depend on the media layer having noticed first.
-  const showVideo = faceTexture !== null && !cameraOff && !away;
+  //
+  // `faceLive` covers the other direction: a texture holds the last frame it
+  // was given for as long as it exists, so an element that has been emptied
+  // underneath us would go on showing somebody's face after they had gone.
+  const showVideo = faceTexture !== null && faceLive && !cameraOff && !away;
 
   return (
     <group ref={rootRef}>

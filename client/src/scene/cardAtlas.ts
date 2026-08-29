@@ -479,6 +479,46 @@ export function cardGeometry(faceSlot: number): THREE.BufferGeometry {
   return geometry;
 }
 
+const planes = new Map<string, THREE.BufferGeometry>();
+
+/**
+ * A single-sided plane carrying one atlas cell, at real card size.
+ *
+ * The box above is a card as an object on a table: it has an edge, a back, and
+ * a thickness you can see when it is tipped up. This is a card as an *image* -
+ * what the projection over the table shows - and a projection has no back to
+ * turn over and no paper edge to catch the light. One quad instead of twelve
+ * triangles, cached by slot exactly as the boxes are.
+ *
+ * Same guarantee as `cardGeometry`: `BACK_SLOT` here is a card with no value
+ * anywhere in it, not a value with a flag over it.
+ */
+export function cardPlaneGeometry(faceSlot: number): THREE.BufferGeometry {
+  const key = String(faceSlot);
+  const cached = planes.get(key);
+  if (cached) return cached;
+
+  const geometry = new THREE.PlaneGeometry(CARD_WIDTH, CARD_HEIGHT);
+  const uv = geometry.getAttribute("uv") as THREE.BufferAttribute;
+  const cell = atlasCell(faceSlot);
+  // A plane's four vertices run top-left, top-right, bottom-left,
+  // bottom-right, the same order a box face uses.
+  const corners: [number, number][] = [
+    [cell.u0, cell.v1],
+    [cell.u1, cell.v1],
+    [cell.u0, cell.v0],
+    [cell.u1, cell.v0],
+  ];
+  for (let i = 0; i < 4; i++) {
+    const [u, v] = corners[i]!;
+    uv.setXY(i, u, v);
+  }
+  uv.needsUpdate = true;
+
+  planes.set(key, geometry);
+  return geometry;
+}
+
 /** Everything the atlas can draw, for tests and for the verify script. */
 export const ATLAS_SLOTS = {
   faces: DECK_SIZE,

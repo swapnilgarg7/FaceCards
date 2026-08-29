@@ -78,6 +78,15 @@ export const Player = schema(
      */
     ready: "boolean",
     /**
+     * This player has seen the last hand's showdown and wants the next one.
+     *
+     * Public, because "who are we waiting for" is the same question the ready
+     * gate answers before the first hand, and the only honest answer is the
+     * list of names. Cleared at every deal, so it is a statement about one
+     * result rather than a standing preference.
+     */
+    readyNext: "boolean",
+    /**
      * Asked to be dealt out. Public, because at a real table everyone can see
      * the seat is not in the hand, and because the alternative is six people
      * waiting on a player who already told the server they were away.

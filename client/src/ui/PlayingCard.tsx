@@ -67,3 +67,58 @@ export function CardRow({
     </span>
   );
 }
+
+/**
+ * A big card that turns over.
+ *
+ * The showdown's card, and the only one in the DOM that is allowed to be
+ * large. Everything else in the HUD is a readout kept deliberately small so it
+ * does not compete with the faces; this is the one moment where the cards
+ * *are* the thing everybody is looking at, so it is drawn at the size of the
+ * moment and it takes the time to turn.
+ *
+ * A real flip rather than a fade: two faces back to back with the near one
+ * rotated away, so what a player sees is the back of a card being turned by
+ * somebody, which is what actually happens at a table. `revealed` going true
+ * is the whole animation; the CSS owns its duration.
+ *
+ * `card` is only read once `revealed` is true, but the value still has to be
+ * in the DOM for the transform to reveal something - so this component is only
+ * ever handed cards the server published in a `Reveal`, never a card that is
+ * merely known to this client.
+ */
+export function FlipCard({
+  card,
+  revealed,
+  dimmed = false,
+}: {
+  /** "As", "Td". Face down until `revealed`, whatever it says. */
+  card?: string;
+  revealed: boolean;
+  /** Not part of the five that won. Still on the table, no longer the story. */
+  dimmed?: boolean;
+}) {
+  const rank = card?.[0] ?? "?";
+  const suit = SUITS[(card?.[1] ?? "").toLowerCase()];
+  const classes = [
+    "flip",
+    revealed ? "flip--up" : "",
+    dimmed && revealed ? "flip--dim" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return (
+    <span className={classes} aria-label={revealed && card ? card : "face-down card"}>
+      <span className="flip__inner">
+        <span className="flip__face flip__back" />
+        <span
+          className={`flip__face flip__front${suit?.red ? " flip__front--red" : ""}`}
+        >
+          <b>{rank}</b>
+          <i>{suit?.glyph ?? "?"}</i>
+        </span>
+      </span>
+    </span>
+  );
+}

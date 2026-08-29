@@ -24,6 +24,21 @@ export const ClientMessage = {
    * back to false - "deal me out again" is what `SitOut` is for.
    */
   Ready: "ready",
+  /**
+   * "I have seen the showdown - deal the next one."
+   *
+   * The result of a hand stays up until every seat still in the game has sent
+   * this, which is the difference between a payout screen and a hand ending.
+   * A run-out that put someone all-in is the moment of the evening, and a
+   * timer that clears it while people are still reacting throws away the only
+   * part of the game that is not arithmetic.
+   *
+   * An intent like every other: it does not deal anything. The server counts
+   * who has asked, deals when the last of them does, and deals anyway after
+   * `PAYOUT_MAX_MS` so one closed laptop cannot park the table. Idempotent,
+   * and meaningless outside a payout.
+   */
+  NextHand: "next-hand",
   /** "Deal me out of the next hand." */
   SitOut: "sit-out",
   /** "Deal me back in." */

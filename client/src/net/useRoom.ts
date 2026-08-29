@@ -43,6 +43,13 @@ export interface SeatSnapshot {
    * true, and a running table deals itself.
    */
   ready: boolean;
+  /**
+   * This player has seen the last showdown and asked for the next hand.
+   *
+   * Cleared at every deal. What the payout screen reads to say who the table
+   * is still waiting for.
+   */
+  readyNext: boolean;
   /** Asked to be dealt out. Takes effect at the next deal, never mid-hand. */
   sittingOut: boolean;
   stack: number;
@@ -140,6 +147,14 @@ export interface UseRoom {
   act(turn: number, type: PokerActionType, amount?: number): void;
   /** "I am ready to play." What holds the first deal until somebody says it. */
   setReady(): void;
+  /**
+   * "I have seen the showdown - deal the next one."
+   *
+   * What holds the payout screen up until the table has finished reacting to
+   * it. The server deals when the last seat says it, and anyway after
+   * `PAYOUT_MAX_MS`.
+   */
+  nextHand(): void;
   /** Deal me out from the next hand, or back in. Never affects a live hand. */
   setSittingOut(sittingOut: boolean): void;
   /**
@@ -177,6 +192,7 @@ function snapshotOf(room: PokerRoom): RoomSnapshot | null {
       seat: player.seat,
       connected: player.connected,
       ready: player.ready,
+      readyNext: player.readyNext,
       sittingOut: player.sittingOut,
       stack: player.stack,
       bet: player.bet,
@@ -384,6 +400,13 @@ export function useRoom(): UseRoom {
     roomRef.current?.send(ClientMessage.Ready);
   }, []);
 
+  const nextHand = useCallback(() => {
+    // A vote, not a deal. The server counts the seats that have asked and
+    // deals when the last of them does; this client cannot start a hand on
+    // top of five people still looking at the last one.
+    roomRef.current?.send(ClientMessage.NextHand);
+  }, []);
+
   const setSittingOut = useCallback((sittingOut: boolean) => {
     // An intent like any other. The server decides when it takes effect, which
     // is at the next deal and never in the middle of a hand you are already
@@ -429,6 +452,7 @@ export function useRoom(): UseRoom {
     join,
     act,
     setReady,
+    nextHand,
     setSittingOut,
     buyIn,
     leave,

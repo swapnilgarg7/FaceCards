@@ -48,6 +48,22 @@ const PEEK_PITCH = -0.72;
 const PEEK_RISE = 0.045;
 const PEEK_DRAW = 0.045;
 
+/**
+ * How a peeked pair opens in the hand.
+ *
+ * At rest the two cards overlap, which is what a hand lying on felt looks
+ * like. Lifted, they must not: two cards tilted to the same angle, a
+ * centimetre apart and still overlapping, are two nearly-coplanar quads with
+ * the near one hiding a fifth of the far one - and the pip they hide is
+ * usually the one you picked the cards up to read. Every real player does the
+ * same thing here, which is to splay the pair open with a thumb, so the peek
+ * spreads them apart and rolls each one out from the middle. It reads as a
+ * hand being fanned and it puts clear air between the two surfaces.
+ */
+const PEEK_SPREAD = 0.024;
+const PEEK_ROLL = 0.2;
+const PEEK_STAGGER = 0.006;
+
 export interface TableCardProps {
   /**
    * Atlas slot for the face, or `BACK_SLOT` for a card whose value this client
@@ -71,6 +87,11 @@ export interface TableCardProps {
   delayMs?: number;
   /** 0..1. Lifts the near edge towards the player holding it. */
   peek?: number;
+  /**
+   * Which way this card fans when the pair is lifted: -1 for the left of the
+   * pair, +1 for the right, 0 for anything that is not part of a hand.
+   */
+  peekFan?: number;
   /** Stable per-card, so no two lie perfectly square to the felt. */
   seed: number;
 }
@@ -84,6 +105,7 @@ export function TableCard({
   arriveKey,
   delayMs = 0,
   peek = 0,
+  peekFan = 0,
   seed,
 }: TableCardProps) {
   const mesh = useRef<THREE.Mesh>(null);
@@ -179,14 +201,27 @@ export function TableCard({
 
     // The peek pulls the card back towards the player and stands its near edge
     // up: the whole gesture is that the face turns towards exactly one pair of
-    // eyes and nobody else's.
+    // eyes and nobody else's. It also fans the pair open, so the card in front
+    // stops covering the corner of the card behind it.
     const drawBack = p.peek * PEEK_DRAW;
+    const spread = p.peek * peekFan * PEEK_SPREAD;
     const outX = Math.sin(spot.yaw);
     const outZ = Math.cos(spot.yaw);
+    // The seat's right, which is the axis the pair is already laid out along.
+    const rightX = Math.cos(spot.yaw);
+    const rightZ = -Math.sin(spot.yaw);
 
-    p.x = damp(p.x, spot.x + outX * drawBack, MOVE_LAMBDA, delta);
-    p.z = damp(p.z, spot.z + outZ * drawBack, MOVE_LAMBDA, delta);
-    p.y = damp(p.y, spot.y + p.peek * PEEK_RISE, MOVE_LAMBDA, delta);
+    p.x = damp(p.x, spot.x + outX * drawBack + rightX * spread, MOVE_LAMBDA, delta);
+    p.z = damp(p.z, spot.z + outZ * drawBack + rightZ * spread, MOVE_LAMBDA, delta);
+    p.y = damp(
+      p.y,
+      // Stepped as well as spread: the far card of a fan sits a little higher
+      // than the near one, which is what stops the two faces sharing a plane
+      // at the top of the lift.
+      spot.y + p.peek * (PEEK_RISE + peekFan * PEEK_STAGGER),
+      MOVE_LAMBDA,
+      delta,
+    );
     p.yaw = dampAngle(p.yaw, spot.yaw, TURN_LAMBDA, delta);
 
     // Peeking overrides the resting face: the card is turned in the hand, so
@@ -198,7 +233,9 @@ export function TableCard({
     p.pitch = dampAngle(p.pitch, target, TURN_LAMBDA, delta);
 
     node.position.set(p.x, p.y, p.z);
-    node.rotation.set(p.pitch, p.yaw, 0);
+    // Roll is the last of the fan: each card of a lifted pair leans out from
+    // the middle, the way a hand splayed with a thumb does.
+    node.rotation.set(p.pitch, p.yaw, p.peek * peekFan * PEEK_ROLL);
     node.visible = visible;
   });
 

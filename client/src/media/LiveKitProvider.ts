@@ -71,9 +71,46 @@ function ensureMediaSink(): HTMLElement {
   sink.style.pointerEvents = "none";
   sink.style.zIndex = "-1";
   sink.style.overflow = "hidden";
+  // One cell, and every element placed in it, so that they stack rather than
+  // queue. **This is load-bearing.** In normal flow the second element sat
+  // below the first, outside a box that is exactly one element tall and clips
+  // its overflow - so the intersection observer behind adaptiveStream reported
+  // it as invisible, LiveKit told the SFU to pause that track, and the second
+  // face anyone met froze on its first frame while the first face was fine.
+  // With every child in the same cell, an eighth peer is as visible as the
+  // first. See `stackInSink` for the other half of it.
+  sink.style.display = "grid";
+  sink.style.gridTemplateRows = "1fr";
+  sink.style.gridTemplateColumns = "1fr";
   document.body.appendChild(sink);
   return sink;
 }
+
+/**
+ * Put an element in the sink's single cell, at the size adaptiveStream is
+ * meant to measure.
+ *
+ * `gridArea` is inert anywhere else, so this survives `ui/VideoTile.tsx`
+ * borrowing the local element for the self-view and handing it back.
+ */
+function stackInSink(el: HTMLElement): void {
+  el.style.gridArea = "1 / 1";
+  el.style.width = `${SINK_WIDTH}px`;
+  el.style.height = `${SINK_HEIGHT}px`;
+  ensureMediaSink().appendChild(el);
+}
+
+/**
+ * How often to check that every remote element is still playing.
+ *
+ * A paused `<video>` is the third way a face freezes, after a paused track and
+ * a texture nobody uploads, and it happens for reasons outside this code:
+ * a media element that loses its source mid-swap, a tab restored from the
+ * back/forward cache, a browser that declines to resume after the machine
+ * wakes. `play()` on an element that is already playing is a no-op, so the
+ * cheapest fix is to keep asking.
+ */
+const PLAYBACK_WATCHDOG_MS = 2000;
 
 /**
  * Floor on the gap between two accepted datagrams from one peer, in ms. Three
@@ -140,6 +177,9 @@ export class LiveKitProvider implements MediaProvider {
   /** peerId -> currently muted kinds, so a late subscriber can be replayed. */
   private readonly mutedNow = new Map<string, Set<TrackKind>>();
 
+  /** Keeps remote elements playing. Runs only while connected. */
+  private playbackWatchdog: ReturnType<typeof setInterval> | null = null;
+
   async connect(credentials: MediaCredentials): Promise<void> {
     if (this.room) await this.disconnect();
 
@@ -164,6 +204,10 @@ export class LiveKitProvider implements MediaProvider {
 
     this.room = room;
     this.wireEvents(room);
+    this.playbackWatchdog ??= setInterval(
+      this.nudgePlayback,
+      PLAYBACK_WATCHDOG_MS,
+    );
     emit(this.stateListeners, "connecting");
 
     await room.connect(credentials.url, credentials.token);
@@ -172,6 +216,10 @@ export class LiveKitProvider implements MediaProvider {
   async disconnect(): Promise<void> {
     const room = this.room;
     this.room = null;
+    if (this.playbackWatchdog !== null) {
+      clearInterval(this.playbackWatchdog);
+      this.playbackWatchdog = null;
+    }
     if (!room) return;
 
     for (const peerId of [...this.remoteVideoEls.keys()]) {
@@ -304,6 +352,22 @@ export class LiveKitProvider implements MediaProvider {
 
   // ---- internals ----------------------------------------------------------
 
+  /**
+   * Restart any remote element that has stopped.
+   *
+   * Video only. A silent audio element is the autoplay-blocked case, which has
+   * its own banner and needs a real user gesture; retrying it here would do
+   * nothing except bury the console in rejected promises.
+   */
+  private readonly nudgePlayback = (): void => {
+    for (const el of this.remoteVideoEls.values()) {
+      if (!el.paused || !el.srcObject) continue;
+      void el.play().catch(() => {
+        // Nothing to do about it, and it is retried in two seconds anyway.
+      });
+    }
+  };
+
   private requireRoom(): Room {
     if (!this.room) throw new Error("MediaProvider is not connected");
     return this.room;
@@ -370,12 +434,26 @@ export class LiveKitProvider implements MediaProvider {
     const peerId = participant.identity;
 
     if (track.kind === Track.Kind.Video) {
-      // attach() is mandatory, not a convenience: reading the raw MediaStream
-      // bypasses adaptive-stream negotiation entirely.
-      const el = track.attach() as HTMLVideoElement;
+      // Built, sized and mounted *before* attach(), which is the opposite of
+      // the obvious order and the reason a face used to arrive frozen.
+      // attach() measures the element on the spot to decide a simulcast layer
+      // and whether the track is visible at all; an element that is not in the
+      // document yet has no box, reads as invisible, and LiveKit answers by
+      // telling the SFU to pause the track before the first frame has landed.
+      // It recovers when the intersection observer next runs, but there is no
+      // reason to ask for a pause we immediately have to undo.
+      //
+      // attach() itself is still mandatory rather than a convenience: reading
+      // the raw MediaStream bypasses adaptive-stream negotiation entirely.
+      const el = document.createElement("video");
       el.dataset["peerId"] = peerId;
-      // attach() sets these already; setting them again costs nothing and
-      // documents that autoplay depends on them.
+      // Which *session* this element belongs to. A player who drops and
+      // reconnects comes back under the same identity, so identity alone
+      // cannot tell their new element from their old one - see
+      // `handleParticipantGone`.
+      el.dataset["participantSid"] = participant.sid;
+      // attach() sets these too; setting them here means they are true before
+      // the element has a source, and documents that autoplay depends on them.
       el.muted = true;
       el.playsInline = true;
       // Sized explicitly, because adaptiveStream measures the *element*, not
@@ -383,9 +461,8 @@ export class LiveKitProvider implements MediaProvider {
       // 300x150 however large the sink around it is. Leaving this off is the
       // same bug as an undersized sink: the top simulcast layer is published
       // and never requested.
-      el.style.width = `${SINK_WIDTH}px`;
-      el.style.height = `${SINK_HEIGHT}px`;
-      ensureMediaSink().appendChild(el);
+      stackInSink(el);
+      track.attach(el);
 
       this.remoteVideoEls.get(peerId)?.remove();
       this.remoteVideoEls.set(peerId, el);
@@ -397,6 +474,7 @@ export class LiveKitProvider implements MediaProvider {
       // Audio is plain DOM playback and never becomes a texture, so it is
       // handled entirely inside this boundary.
       const el = track.attach();
+      el.dataset["participantSid"] = participant.sid;
       ensureMediaSink().appendChild(el);
       this.remoteAudioEls.get(peerId)?.remove();
       this.remoteAudioEls.set(peerId, el);
@@ -412,12 +490,22 @@ export class LiveKitProvider implements MediaProvider {
     // Detach every element this track owns, then drop ours. A leaked video
     // element becomes a leaked VideoTexture in phase 1, which eats VRAM within
     // minutes of people cycling in and out.
-    for (const el of track.detach()) el.remove();
+    const detached = track.detach();
+    for (const el of detached) el.remove();
 
+    // Only clear the seat if what we are holding is one of the elements this
+    // track just took with it. An unsubscribe for a stale track can land after
+    // the same player's new one has been subscribed - a reconnect, or a camera
+    // toggled off and on - and deleting by identity alone would throw away the
+    // element that is currently working and leave the avatar blank for good.
     if (track.kind === Track.Kind.Video) {
+      const current = this.remoteVideoEls.get(peerId);
+      if (current && !detached.includes(current)) return;
       this.remoteVideoEls.delete(peerId);
       emit(this.goneListeners, peerId);
     } else if (track.kind === Track.Kind.Audio) {
+      const current = this.remoteAudioEls.get(peerId);
+      if (current && !detached.includes(current)) return;
       this.remoteAudioEls.delete(peerId);
     }
   };
@@ -425,6 +513,20 @@ export class LiveKitProvider implements MediaProvider {
   private readonly handleParticipantGone = (
     participant: RemoteParticipant,
   ): void => {
+    // Same trap as above, one level up. A player who drops and reconnects
+    // rejoins under the same identity, and LiveKit replaces the participant
+    // rather than adding one, so the disconnect for the session that ended can
+    // arrive *after* the replacement's tracks have been subscribed. Tearing
+    // down on identity alone would then null the source of the element that
+    // had just started playing, and that seat stays empty until they leave and
+    // come back again - which is the whole bug, seen from the other side of
+    // the table.
+    const video = this.remoteVideoEls.get(participant.identity);
+    const audio = this.remoteAudioEls.get(participant.identity);
+    const held =
+      video?.dataset["participantSid"] ?? audio?.dataset["participantSid"];
+    if (held !== undefined && held !== participant.sid) return;
+
     this.teardownPeer(participant.identity);
   };
 
@@ -535,10 +637,16 @@ export class LiveKitProvider implements MediaProvider {
     if (!track) return;
 
     this.detachLocalVideo();
-    const el = track.attach() as HTMLVideoElement;
+    // Mounted before attach and stacked in the sink's one cell for the same
+    // reasons as a remote element. Nothing negotiates a layer for our own
+    // camera, but an element sitting in the flow displaces every remote one
+    // below it and out of the clip, which is exactly the bug `stackInSink`
+    // exists to stop.
+    const el = document.createElement("video");
     el.muted = true;
     el.playsInline = true;
-    ensureMediaSink().appendChild(el);
+    stackInSink(el);
+    track.attach(el);
     this.localVideoEl = el;
   }
 

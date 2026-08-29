@@ -3,6 +3,7 @@ import {
   BOARD_SIZE,
   CARD_HEIGHT,
   CARD_REST_Y,
+  CARD_THICKNESS,
   CARD_WIDTH,
   DECK_SIZE,
   boardSpot,
@@ -93,8 +94,20 @@ describe("holeSpot", () => {
       for (const index of [0, 1]) {
         const spot = holeSpot(seat, index);
         expect(Math.hypot(spot.x, spot.z)).toBeLessThan(TABLE.radius);
-        expect(spot.y).toBe(CARD_REST_Y);
+        expect(spot.y).toBeGreaterThanOrEqual(CARD_REST_Y);
+        // Still paper on felt, not a card hovering over the table.
+        expect(spot.y - CARD_REST_Y).toBeLessThan(CARD_THICKNESS * 3);
       }
+    }
+  });
+
+  it("puts one card of the pair on top of the other", () => {
+    // The pair overlaps on purpose, and two overlapping cards at the same
+    // height z-fight: the depth buffer cannot say which face wins, so the
+    // overlap strobes as the camera moves. One is physically on top.
+    for (const seat of ring) {
+      const lift = holeSpot(seat, 1).y - holeSpot(seat, 0).y;
+      expect(lift).toBeGreaterThanOrEqual(CARD_THICKNESS);
     }
   });
 

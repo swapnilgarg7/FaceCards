@@ -8,7 +8,9 @@ import {
   MAX_PLAYERS,
   MAX_STACK,
   MIN_PLAYERS,
+  NEXT_HAND_BEAT_MS,
   PAYOUT_DISPLAY_MS,
+  PAYOUT_MAX_MS,
   PokerAction,
   Player,
   PokerState,
@@ -158,6 +160,17 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
    * player won it.
    */
   private readonly handNames = new Map<number, string>();
+  /**
+   * When the result currently on screen was decided, or 0 between payouts.
+   *
+   * The showdown ceremony is played out client-side and takes a few seconds,
+   * so "everyone has pressed Next round" can arrive before anyone has actually
+   * watched the run-out - a spectator who folded on the flop has nothing left
+   * to reveal and could be clicking within a frame of the result landing.
+   * `PAYOUT_DISPLAY_MS` is measured from here, so the ceremony always gets to
+   * finish.
+   */
+  private payoutStartedAt = 0;
 
   override onCreate(options: { code?: unknown }): void {
     const code = normaliseRoomCode(options?.code);
@@ -201,6 +214,10 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
       this.considerDealing();
     });
 
+    this.onMessage(ClientMessage.NextHand, (client) => {
+      this.handleNextHand(client);
+    });
+
     this.onMessage(ClientMessage.SitOut, (client) => {
       const player = this.state.players.get(client.sessionId);
       // Unchanged is a no-op. `sittingOut` is a public field, so writing it
@@ -211,6 +228,10 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
       // Sitting out never yanks a player out of the hand they are already in;
       // it takes effect at the next deal. Leaving mid-hand is a fold, and
       // that is a different, explicit thing.
+      //
+      // It does end their vote on the payout screen, though: a seat that is
+      // not in the next hand cannot be the one the next hand is waiting for.
+      this.considerContinuing();
     });
 
     this.onMessage(ClientMessage.SitIn, (client) => {
@@ -251,6 +272,7 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
     // Nobody is dealt in by the act of sitting down. The first hand waits for
     // `MIN_PLAYERS` people to say they are ready; see `ClientMessage.Ready`.
     player.ready = false;
+    player.readyNext = false;
     player.sittingOut = false;
     player.stack = STARTING_STACK;
     player.totalBuyIn = STARTING_STACK;
@@ -316,6 +338,8 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
     // Re-arm on the short clock if they were the one holding it up. Nothing
     // else about the hand changes: an empty chair is still in the pot.
     this.armTurnClock();
+    // An empty chair is also not somebody the payout screen is waiting on.
+    this.considerContinuing();
 
     try {
       await this.allowReconnection(client, RECONNECT_GRACE_MS / 1000);
@@ -394,6 +418,8 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
       if (this.hand.actingSeat !== actingBefore) this.bumpTurn();
       this.syncHand();
     }
+    // They are not coming back to press Next round.
+    this.considerContinuing();
     this.scheduleDisposeIfEmpty();
   }
 
@@ -783,9 +809,58 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
     const summary = this.state.lastResult || "hand over";
     console.log(`[room ${this.state.code}] hand ${hand.handNumber}: ${summary}`);
 
-    // The result stays up long enough to talk about, which is the point of the
-    // product. Then the next hand deals itself with no lobby round-trip.
-    this.scheduleDeal(PAYOUT_DISPLAY_MS);
+    // The result stays up until the table has finished talking about it,
+    // which is the point of the product. Every seat still in the game presses
+    // Next round and the deal follows; `PAYOUT_MAX_MS` is only the backstop
+    // for a table that walked away. Either way there is no lobby round-trip.
+    this.payoutStartedAt = Date.now();
+    this.state.players.forEach((player) => {
+      player.readyNext = false;
+    });
+    this.scheduleDeal(PAYOUT_MAX_MS);
+    // A payout nobody is left to watch - everyone busted, dropped or sat out
+    // as the hand ended - should not sit on a minute-long timer.
+    this.considerContinuing();
+  }
+
+  /**
+   * "I have seen it, deal the next one."
+   *
+   * A vote, not a command. It is recorded and then `considerContinuing` decides
+   * whether the table has finished looking at the hand; one client cannot deal
+   * over the top of five people still reacting to a river.
+   */
+  private handleNextHand(client: Client): void {
+    const player = this.state.players.get(client.sessionId);
+    if (!player) return;
+    // Only ever meaningful while a decided hand is on screen. Outside that it
+    // is a stale click from a client whose payout has already cleared.
+    if (this.hand || this.state.phase !== TablePhase.Payout) return;
+    // Idempotent, and one inbound byte must not become a patch to every
+    // client at the table as fast as somebody cares to send it.
+    if (player.readyNext) return;
+    player.readyNext = true;
+    this.considerContinuing();
+  }
+
+  /**
+   * Deal early once everybody who is in the next hand has asked to move on.
+   *
+   * "Everybody" is `eligiblePlayers()`, the same set that would be dealt in:
+   * a seat that busted, dropped, sat out or left is not somebody the table
+   * waits for. That also makes the empty case correct rather than a special
+   * one - a payout with nobody eligible has nobody to wait for, and `deal()`
+   * puts the table back to waiting.
+   */
+  private considerContinuing(): void {
+    if (this.hand || this.state.phase !== TablePhase.Payout) return;
+    if (this.eligiblePlayers().some((player) => !player.readyNext)) return;
+
+    // The client is still turning cards over. Whatever the table clicked, the
+    // showdown gets the whole of `PAYOUT_DISPLAY_MS` to play out.
+    const watched = Date.now() - this.payoutStartedAt;
+    const remaining = Math.max(0, PAYOUT_DISPLAY_MS - watched);
+    this.scheduleDeal(Math.max(NEXT_HAND_BEAT_MS, remaining));
   }
 
   /** Deal if a hand can start and one is not already running or scheduled. */
@@ -874,6 +949,7 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
 
   private deal(): void {
     if (this.hand) return;
+    this.payoutStartedAt = 0;
 
     // Chips bought during the last hand join their stacks now, which is also
     // what can take a busted seat back over the line into the next one.
