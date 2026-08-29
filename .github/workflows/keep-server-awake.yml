@@ -1,0 +1,88 @@
+# Hold the free Render instance awake.
+#
+# Render spins a free web service down after 15 minutes without inbound
+# traffic. Rooms live in memory on a single process, so a spin-down does not
+# pause a table - it destroys it, and every connected client's automatic
+# reconnect then fails with `MATCHMAKE_EXPIRED` (524, "seat reservation
+# expired"), which is precisely the bug this workflow exists to stop.
+#
+# Read `docs/DEPLOYMENT.md` before changing the cadence. The arithmetic that
+# matters: a Render workspace gets 750 free instance-hours per calendar month
+# and a month is 720-744 hours, so keeping this awake around the clock consumes
+# essentially the entire allowance. `facecards-server` must be the *only* free
+# web service in the workspace or Render suspends all of them until the first
+# of the next month. The client belongs on Cloudflare Pages, not on a second
+# Render service.
+#
+# Three decisions worth keeping:
+#
+#   - **`/api/health`, never `/robots.txt`.** Render answers `/robots.txt`
+#     itself while a service is asleep, so a monitor pointed there reports
+#     green forever with nothing running behind it. The step below also greps
+#     the body, because reaching *something* is not the same as reaching the
+#     game server.
+#
+#   - **Not a self-ping from the server.** A process that has already been spun
+#     down cannot ping itself awake, and Render's docs reserve the right to
+#     suspend services for self-directed outbound traffic.
+#
+#   - **Every five minutes, not every fourteen.** GitHub delays scheduled
+#     workflows under load, routinely by several minutes and occasionally by
+#     far more. A 14-minute schedule against a 15-minute spin-down has no
+#     margin for that. Minutes are free on a public repository, so the margin
+#     is free too.
+#
+# This makes cold starts rare. It cannot make them impossible - a deploy, a
+# crash, an hour when GitHub's scheduler is behind, or a month that ran out of
+# instance hours all still produce one - so `client/src/net/wake.ts` stays.
+
+name: keep-server-awake
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  # So it can be fired by hand after a deploy rather than waiting for the next
+  # slot, and so the workflow can be tested without editing the cron.
+  workflow_dispatch:
+
+# A late run and a running run are the same intent: the newer one wins rather
+# than queueing behind a cold start that is already in progress.
+concurrency:
+  group: keep-server-awake
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    # A cold start is about a minute and the retries have to fit inside it
+    # twice over; anything longer than this is a real outage, not a wake-up.
+    timeout-minutes: 8
+    steps:
+      - name: Ping the game server
+        env:
+          # Override in Settings -> Secrets and variables -> Actions ->
+          # Variables if the service is not on the default Render hostname.
+          HEALTH_URL: ${{ vars.SERVER_HEALTH_URL || 'https://facecards-server.onrender.com/api/health' }}
+        run: |
+          set -euo pipefail
+
+          # Render holds the request open while a spun-down instance boots
+          # rather than refusing it, so the timeout has to outlast a cold start
+          # or the ping gives up on the very thing it is there to trigger.
+          body=$(curl -fsS \
+            --max-time 120 \
+            --retry 2 --retry-delay 15 --retry-all-errors \
+            --user-agent "facecards-keepalive (github actions)" \
+            "$HEALTH_URL")
+
+          echo "$body"
+
+          # Proof we reached the app and not a platform page standing in front
+          # of a sleeping one.
+          case "$body" in
+            *'"ok":true'*) echo "server is awake" ;;
+            *) echo "::error::reached $HEALTH_URL but it did not answer as the game server"; exit 1 ;;
+          esac

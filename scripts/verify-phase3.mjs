@@ -112,6 +112,9 @@ async function seat(name, avatar) {
     displayName: name,
     ...(avatar === undefined ? {} : { avatar }),
   });
+  // Nothing is dealt until a seat says it is ready, so every scripted client
+  // presses Play the way a person would. See `ClientMessage.Ready`.
+  room.send(ClientMessage.Ready);
   const player = track({ name, room, seen: [], rejections: [] });
   seats.push(player);
   return player;

@@ -44,6 +44,7 @@ export type SeatNote =
   | "folded"
   | "buying-in"
   | "busted"
+  | "not-ready"
   | "sitting-out"
   | "waiting-for-blind"
   | "playing";
@@ -90,6 +91,10 @@ function noteFor(player: SeatSnapshot): SeatNote {
   // it is still all-in above, those chips are very much in play.
   if (player.stack === 0 && player.pendingBuyIn > 0) return "buying-in";
   if (player.stack === 0) return "busted";
+  // Sat down but has not pressed Play. It reads above sitting out because it
+  // is the state a table is actually waiting on before the first hand, and
+  // "has not started yet" is a different sentence from "is taking a break".
+  if (!player.ready) return "not-ready";
   if (player.sittingOut) return "sitting-out";
   if (player.owesBlind) return "waiting-for-blind";
   return "playing";

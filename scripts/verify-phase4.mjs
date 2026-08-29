@@ -147,6 +147,7 @@ for (const name of ["Ada", "Grace"]) {
     displayName: name,
     avatar: "cowboy",
   });
+  room.send(ClientMessage.Ready);
   seats.push({ name, room });
   await sleep(150);
 }

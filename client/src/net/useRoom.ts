@@ -11,6 +11,7 @@ import {
   type TablePhaseValue,
 } from "@facecards/shared";
 import { createRoom, joinRoom, type PokerRoom } from "./client.js";
+import { describeDisconnect, explainDisconnect } from "./disconnectReason.js";
 
 /**
  * Room lifecycle as a hook.
@@ -35,6 +36,13 @@ export interface SeatSnapshot {
   seat: number;
   /** False while this seat is being held open through a reconnection window. */
   connected: boolean;
+  /**
+   * This player has pressed Play. Nothing is dealt to a seat that has not.
+   *
+   * The gate is on starting, not on every hand: once it is true it stays
+   * true, and a running table deals itself.
+   */
+  ready: boolean;
   /** Asked to be dealt out. Takes effect at the next deal, never mid-hand. */
   sittingOut: boolean;
   stack: number;
@@ -130,6 +138,8 @@ export interface UseRoom {
   create(displayName: string, avatar: string): Promise<void>;
   join(code: string, displayName: string, avatar: string): Promise<void>;
   act(turn: number, type: PokerActionType, amount?: number): void;
+  /** "I am ready to play." What holds the first deal until somebody says it. */
+  setReady(): void;
   /** Deal me out from the next hand, or back in. Never affects a live hand. */
   setSittingOut(sittingOut: boolean): void;
   /**
@@ -166,6 +176,7 @@ function snapshotOf(room: PokerRoom): RoomSnapshot | null {
       avatar: player.avatar,
       seat: player.seat,
       connected: player.connected,
+      ready: player.ready,
       sittingOut: player.sittingOut,
       stack: player.stack,
       bet: player.bet,
@@ -232,9 +243,23 @@ export function useRoom(): UseRoom {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [mediaToken, setMediaToken] = useState<MediaTokenPayload | null>(null);
   const [rejection, setRejection] = useState<string | null>(null);
+  /**
+   * Why this room ended badly, if it did.
+   *
+   * A ref, because `onLeave` has to read it in the same tick `onError` wrote
+   * it and a state update would not have landed yet. It exists because
+   * Colyseus reports one failure through *two* callbacks in order - the
+   * `Protocol.ERROR` frame first, the socket close a moment later - and
+   * `onLeave` used to reset the status unconditionally, so the explanation was
+   * overwritten by "idle" immediately after being shown. That is what being
+   * "randomly logged out" looks like from the inside: the reason existed, for
+   * about one frame.
+   */
+  const failure = useRef<string | null>(null);
 
   const attach = useCallback((room: PokerRoom) => {
     roomRef.current = room;
+    failure.current = null;
     setSessionId(room.sessionId);
     setSnapshot(snapshotOf(room));
 
@@ -251,8 +276,15 @@ export function useRoom(): UseRoom {
       (payload) => setRejection(payload?.reason ?? "action rejected"),
     );
 
+    // Colyseus sends this as a frame *before* closing the socket, so it is the
+    // only place the real reason is available - by the time `onLeave` fires,
+    // all that is left is a close code. Both are logged raw: the first report
+    // of a 524 arrived as a screenshot of a sentence with the code already
+    // formatted out of it, and there was nothing else to go on.
     room.onError((code, message) => {
-      setStatus({ kind: "error", message: `${message ?? "Room error"} (${code})` });
+      console.warn(describeDisconnect("error", code, message));
+      failure.current = explainDisconnect(code, message) ?? failure.current;
+      if (failure.current) setStatus({ kind: "error", message: failure.current });
     });
 
     // The socket died but the SDK will keep trying, and the server is holding
@@ -276,13 +308,21 @@ export function useRoom(): UseRoom {
       setSnapshot(snapshotOf(room));
     });
 
-    room.onLeave(() => {
+    // Every exit lands here: leaving on purpose, the reconnection window
+    // closing, and the server refusing a reconnection. Only the first of those
+    // is a plain return to the lobby.
+    room.onLeave((code, reason) => {
+      console.warn(describeDisconnect("leave", code, reason));
       roomRef.current = null;
-      setStatus({ kind: "idle" });
       setSnapshot(null);
       setSessionId(null);
       setMediaToken(null);
       setRejection(null);
+
+      // An explanation already on the books wins: `onError` saw the frame that
+      // said *why*, and this close code only says *that*.
+      const why = failure.current ?? explainDisconnect(code, reason);
+      setStatus(why ? { kind: "error", message: why } : { kind: "idle" });
     });
 
     setStatus({ kind: "connected" });
@@ -337,6 +377,13 @@ export function useRoom(): UseRoom {
     [],
   );
 
+  const setReady = useCallback(() => {
+    // "I am ready", not "start the game". The server counts how many seats
+    // have said it and deals when enough have; one client cannot deal a hand
+    // to a table that is not ready for it.
+    roomRef.current?.send(ClientMessage.Ready);
+  }, []);
+
   const setSittingOut = useCallback((sittingOut: boolean) => {
     // An intent like any other. The server decides when it takes effect, which
     // is at the next deal and never in the middle of a hand you are already
@@ -381,6 +428,7 @@ export function useRoom(): UseRoom {
     create,
     join,
     act,
+    setReady,
     setSittingOut,
     buyIn,
     leave,

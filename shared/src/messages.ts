@@ -14,6 +14,16 @@
 export const ClientMessage = {
   /** "I want to fold / check / call / raise." Payload: `PokerActionIntent`. */
   Action: "action",
+  /**
+   * "I am ready - deal me in."
+   *
+   * The gate on the first hand. A table does not start dealing because two
+   * browsers happened to connect: it starts when the people in it say they
+   * are ready, which at a poker night is somebody saying "right, let's play"
+   * rather than a countdown nobody asked for. Idempotent, and never sent
+   * back to false - "deal me out again" is what `SitOut` is for.
+   */
+  Ready: "ready",
   /** "Deal me out of the next hand." */
   SitOut: "sit-out",
   /** "Deal me back in." */

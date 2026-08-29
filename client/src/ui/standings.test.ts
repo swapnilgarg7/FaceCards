@@ -10,6 +10,7 @@ function seat(over: Partial<SeatSnapshot> = {}): SeatSnapshot {
     avatar: "cowboy",
     seat: 0,
     connected: true,
+    ready: true,
     sittingOut: false,
     stack: 1000,
     bet: 0,

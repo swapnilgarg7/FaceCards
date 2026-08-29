@@ -186,6 +186,21 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
       this.handleAction(client, intent);
     });
 
+    this.onMessage(ClientMessage.Ready, (client) => {
+      const player = this.state.players.get(client.sessionId);
+      // Idempotent, and one-way. Re-sending it is a no-op rather than a patch
+      // fanned out to the whole table, and there is no "un-ready": once the
+      // game is running, being dealt out is `SitOut`, which says so on the
+      // seat and has the blind rules attached to it.
+      if (!player || player.ready) return;
+      player.ready = true;
+      console.log(
+        `[room ${this.state.code}] ${player.displayName} is ready` +
+          ` (${this.readyPlayers().length}/${this.state.players.size})`,
+      );
+      this.considerDealing();
+    });
+
     this.onMessage(ClientMessage.SitOut, (client) => {
       const player = this.state.players.get(client.sessionId);
       // Unchanged is a no-op. `sittingOut` is a public field, so writing it
@@ -233,6 +248,9 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
     player.displayName = sanitiseDisplayName(options?.displayName, seat);
     player.avatar = pickAvatar(options?.avatar, this.avatarsInUse(), seat);
     player.connected = true;
+    // Nobody is dealt in by the act of sitting down. The first hand waits for
+    // `MIN_PLAYERS` people to say they are ready; see `ClientMessage.Ready`.
+    player.ready = false;
     player.sittingOut = false;
     player.stack = STARTING_STACK;
     player.totalBuyIn = STARTING_STACK;
@@ -777,6 +795,15 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
     this.scheduleDeal(HAND_START_DELAY_MS);
   }
 
+  /** Everyone who has pressed Play, whatever else is true of them. */
+  private readyPlayers(): PlayerInstance[] {
+    const out: PlayerInstance[] = [];
+    this.state.players.forEach((player) => {
+      if (player.ready) out.push(player);
+    });
+    return out;
+  }
+
   /**
    * Seats able and willing to be dealt in right now.
    *
@@ -791,6 +818,11 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
       // Chips still waiting on the end of a hand count towards being able to
       // play the next one; `applyPendingBuyIns` pushes them across first.
       if (player.stack + player.pendingBuyIn <= 0) return;
+      // Has not said they are ready yet. This is what holds the very first
+      // deal until somebody presses Play, and it also means a friend who
+      // joins an evening already in progress is not dealt a hand while they
+      // are still saying hello.
+      if (!player.ready) return;
       if (player.sittingOut) return;
       // A seat held open through a reconnection window is not dealt in. They
       // keep the chair and the chips; what they miss is the hands they were

@@ -63,6 +63,7 @@ export default function App() {
         rejection={room.rejection}
         reconnecting={room.status.kind === "reconnecting"}
         onAct={room.act}
+        onReady={room.setReady}
         onSitOutChange={room.setSittingOut}
         onBuyIn={room.buyIn}
         onLeave={leave}

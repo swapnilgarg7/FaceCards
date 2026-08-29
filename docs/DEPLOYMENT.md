@@ -145,6 +145,21 @@ anyone, the game server is fine and the LiveKit credentials are wrong.
   a crash, an hour when the monitor is down, and the end of a month that ran
   out of instance hours all produce a cold start no ping prevents.
 
+  **How it is wired here:** `.github/workflows/keep-server-awake.yml`, every
+  five minutes, hitting `/api/health` and checking the body actually says
+  `"ok":true` rather than trusting a 200. Actions minutes are free on a public
+  repository, so the interval buys margin against GitHub delaying scheduled
+  runs - which it does, routinely by minutes and occasionally by much more, and
+  a 14-minute schedule against a 15-minute spin-down has nowhere to absorb it.
+  Point it somewhere else by setting an Actions **variable** (not a secret)
+  named `SERVER_HEALTH_URL`.
+
+  Two things will silently stop it. GitHub **disables scheduled workflows in a
+  public repository after 60 days with no repository activity**, and it does
+  not shout about it: a quiet month means the pings stop and tables start dying
+  again. And it is off entirely for anyone who forks. Re-enable from the
+  Actions tab, or move to an external monitor if the repo goes quiet for good.
+
 - **Untested: whether a live WebSocket alone counts as traffic.** The docs say a
   spun-down service wakes on "an HTTP request or new WebSocket connection", and
   say spin-down follows 15 minutes with no inbound traffic, without settling

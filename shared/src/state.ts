@@ -62,6 +62,22 @@ export const Player = schema(
      */
     avatar: "string",
     /**
+     * This player has said they are ready to play.
+     *
+     * False from the moment a seat is taken, and the reason a table with two
+     * people in it does not immediately deal. Sitting down is not the same
+     * act as being ready: somebody who has just arrived is finding their
+     * camera, waiting on a friend, or reading the room code out loud, and
+     * posting a blind for them is the rudest possible way to say hello.
+     *
+     * Public, because "who are we still waiting for" is a question the whole
+     * table is asking and the only honest answer is the list. Never cleared
+     * once set - the gate is on starting, not on every hand - so a running
+     * table keeps dealing itself with no round trip. Being dealt out again is
+     * `sittingOut`, which is a different thing and says so.
+     */
+    ready: "boolean",
+    /**
      * Asked to be dealt out. Public, because at a real table everyone can see
      * the seat is not in the hand, and because the alternative is six people
      * waiting on a player who already told the server they were away.

@@ -74,6 +74,9 @@ async function seat(name) {
     player.rejections.push(payload.reason),
   );
   room.onMessage(ServerMessage.MediaToken, () => {});
+  // Nothing is dealt until a seat says it is ready, so every scripted client
+  // presses Play the way a person would. See `ClientMessage.Ready`.
+  room.send(ClientMessage.Ready);
   seats.push(player);
   return player;
 }

@@ -846,6 +846,8 @@ h2 {
 }
 .actions__buttons {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   align-items: stretch;
   gap: 0.6rem;
 }
@@ -873,10 +875,14 @@ h2 {
    times a player already knows the number. All three write the same value. */
 .sizer {
   display: flex;
-  flex-direction: column;
+  /* One row rather than a stack. The bar sits over this seat's own two cards
+     on the felt, and every extra centimetre of HUD is a centimetre of table
+     it hides. */
+  flex-flow: row wrap;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.55rem 0.85rem;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.8rem;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: rgba(18, 8, 15, 0.74);
@@ -890,6 +896,17 @@ h2 {
   font-size: 0.72rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
+}
+.sizer__verb {
+  color: var(--dim);
+}
+/* The ceiling, next to the field, so "of 1,480" answers "how much can I
+   actually put in" without the player having to try it. */
+.sizer__bounds {
+  color: var(--dim);
+  opacity: 0.75;
+  text-transform: none;
+  letter-spacing: 0;
 }
 .sizer__amount {
   width: 7.5rem;
@@ -916,7 +933,7 @@ h2 {
   color: var(--error);
 }
 .sizer__slider {
-  width: 20rem;
+  width: 14rem;
   max-width: 100%;
   accent-color: var(--accent);
 }
@@ -940,6 +957,7 @@ h2 {
   letter-spacing: 0;
 }
 .sizer__why {
+  flex-basis: 100%;
   max-width: 26rem;
   margin: 0;
   font-size: 0.78rem;
@@ -976,6 +994,67 @@ h2 {
 .peekhint--on .kbd {
   border-color: var(--accent);
   color: var(--accent-bright);
+}
+
+/* Before the first card. Nothing is dealt until the people at the table say
+   they are ready, so this stands where the action bar stands and answers the
+   only question there is yet: are we playing?
+
+   It replaces the action bar rather than sitting above it. A greyed-out row
+   of Fold/Check/Raise over a Play button is two answers to one question. */
+.gate {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.9rem 1.5rem 1rem;
+  border: 1px solid var(--line-bright);
+  border-radius: 12px;
+  background: rgba(18, 8, 15, 0.84);
+  backdrop-filter: blur(8px);
+  text-align: center;
+}
+.gate__lede {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.95rem;
+}
+.gate__meta {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0;
+  color: var(--dim);
+  font-size: 0.78rem;
+}
+.gate__count {
+  color: var(--accent-bright);
+  font-family: var(--font-numeric);
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.05em;
+}
+.gate__code {
+  margin: 0;
+  color: var(--dim);
+  font-size: 0.78rem;
+}
+/* The loudest control in the product, for the two seconds it exists. */
+.btn--play {
+  --btn-bg: linear-gradient(180deg, var(--accent-bright), var(--accent));
+  min-width: 13rem;
+  padding: 0.95rem 1.7rem;
+  background: var(--btn-bg);
+  border-color: var(--accent-bright);
+  color: var(--accent-ink);
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  box-shadow: 0 8px 24px rgba(217, 180, 81, 0.28);
+}
+.btn--play:hover:not(:disabled) {
+  color: var(--accent-ink);
+  filter: brightness(1.07);
 }
 
 .note {
@@ -1072,8 +1151,8 @@ h2 {
 }
 
 /* The action clock. A picture of the server's clock; see `TurnClock.tsx`.
-   `.actions` is a wrapping flex row, so the clock claims the whole first line
-   and the buttons sit under it rather than beside it. */
+   `.actions--idle` is a wrapping flex row, so the clock claims the whole
+   first line there and the legend sits under it rather than beside it. */
 .clock {
   flex-basis: 100%;
   width: 100%;
@@ -1085,6 +1164,12 @@ h2 {
 }
 .clock--mine {
   height: 5px;
+}
+/* The live bar is a column, where `flex-basis` would be a height rather than
+   a width. The clock keeps its own three or five pixels and stretches across
+   whatever the widest row under it turns out to be. */
+.actions--live .clock {
+  flex-basis: auto;
 }
 .clock__fill {
   width: 100%;
@@ -1116,11 +1201,13 @@ h2 {
 }
 
 /* What letting go of a chip push will do. Centred low, over the felt, near
-   where the chips themselves are - not up with the room controls. */
+   where the chips themselves are - not up with the room controls, and clear
+   of the action bar, which is now three full-size buttons and a sizing row
+   tall. */
 .push {
   position: absolute;
   left: 50%;
-  bottom: 7.5rem;
+  bottom: 11.5rem;
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;

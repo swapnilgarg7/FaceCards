@@ -12,6 +12,8 @@ import { Kbd } from "./Kbd.js";
 import { Leaderboard } from "./Leaderboard.js";
 import { PeekHint } from "./PeekHint.js";
 import { SettingsPanel, loadSensitivity } from "./SettingsPanel.js";
+import { PlayGate } from "./PlayGate.js";
+import { startGate } from "./startGate.js";
 import { VideoTile } from "./VideoTile.js";
 import { useChipPush } from "./useChipPush.js";
 import { useHoldKeybind, useKeybinds } from "./useKeybinds.js";
@@ -38,6 +40,7 @@ export function Table({
   rejection,
   reconnecting,
   onAct,
+  onReady,
   onSitOutChange,
   onBuyIn,
   onLeave,
@@ -49,12 +52,17 @@ export function Table({
   /** The socket dropped and we are inside the server's grace window. */
   reconnecting: boolean;
   onAct(turn: number, type: PokerActionType, amount?: number): void;
+  /** "I am ready." Nothing is dealt to this seat until it has been sent. */
+  onReady(): void;
   onSitOutChange(sittingOut: boolean): void;
   /** Ask for more chips behind this seat. The server decides how many, and when. */
   onBuyIn(amount: number): void;
   onLeave(): void;
 }) {
   const me = snapshot.players.find((p) => p.sessionId === sessionId);
+  // Whether the evening has begun. Until it has, the bottom of the screen
+  // belongs to Play rather than to Fold/Check/Raise.
+  const gate = startGate(snapshot, me);
   const shareUrl = `${window.location.origin}/?room=${snapshot.code}`;
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sensitivity, setSensitivity] = useState(loadSensitivity);
@@ -250,15 +258,24 @@ export function Table({
           clock sits under it where a player's eyes already are. */}
       <footer className="hud hud--bottom">
         <PeekHint hasCards={!!me && me.cardCount > 0} peeking={peeking} />
-        <ActionBar
-          snapshot={snapshot}
-          me={me}
-          rejection={rejection}
-          // The menu owns the keyboard while it is open, so a stray F does not
-          // fold the hand behind it.
-          enabled={!settingsOpen}
-          onAct={onAct}
-        />
+        {gate.show ? (
+          <PlayGate
+            gate={gate}
+            snapshot={snapshot}
+            me={me}
+            onReady={onReady}
+          />
+        ) : (
+          <ActionBar
+            snapshot={snapshot}
+            me={me}
+            rejection={rejection}
+            // The menu owns the keyboard while it is open, so a stray F does
+            // not fold the hand behind it.
+            enabled={!settingsOpen}
+            onAct={onAct}
+          />
+        )}
       </footer>
 
       {/* Dev only. `import.meta.env.DEV` is substituted with `false` at build
