@@ -170,6 +170,12 @@ against a live server:
       round-trip
 - [x] Client HUD renders server state and sends intents; it contains no poker
       rule, not even the min-raise
+- [x] Keyboard-first table controls, because the mouse turns your head: reaching
+      for a button swings the view on the way there. `F` fold, `C` check/call,
+      `R` raise, `⇧R` all in, `←`/`→` to size it, `Esc` settings, `M` mute, `V`
+      camera. Defined once in `client/src/ui/keybinds.ts`, which every chip and
+      the settings list read from. **W, A, S and D are reserved** for camera
+      movement later, and a test fails if anything claims them
 
 Known boundaries left to later phases, on purpose:
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { MAX_PLAYERS, type PokerActionType } from "@facecards/shared";
 import { useFaceTracking } from "../avatars/useFaceTracking.js";
 import type { UseMedia } from "../media/useMedia.js";
@@ -7,8 +7,10 @@ import { Room3D } from "../scene/Room3D.js";
 import { ActionBar } from "./ActionBar.js";
 import { FaceDebug } from "./FaceDebug.js";
 import { HandHud } from "./HandHud.js";
+import { Kbd } from "./Kbd.js";
 import { SettingsPanel, loadSensitivity } from "./SettingsPanel.js";
 import { VideoTile } from "./VideoTile.js";
+import { useKeybinds } from "./useKeybinds.js";
 
 /**
  * The table: a full-bleed 3D room with a thin HUD floating over it.
@@ -18,6 +20,11 @@ import { VideoTile } from "./VideoTile.js";
  * on their avatar, and every element added here is one more thing competing
  * with the faces, which are the product. Anything that is not needed mid-hand
  * lives behind Escape instead.
+ *
+ * It is also, deliberately, mostly keyboard. The mouse drives the camera, so
+ * every trip to a button turns your head on the way; the buttons stay as a
+ * visible fallback and as the place the shortcuts are advertised, but the keys
+ * are the intended path. See `keybinds.ts`.
  */
 export function Table({
   snapshot,
@@ -45,18 +52,16 @@ export function Table({
   // why it is here rather than buried in the scene that never renders us.
   const tracking = useFaceTracking(media.localVideo, media.sendFaceBox);
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      // Escape is free to mean this, because we never took pointer lock: in a
-      // locked FPS the browser owns this key and shows its own overlay.
-      event.preventDefault();
-      setSettingsOpen((open) => !open);
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  // Room-level shortcuts. Escape is free to mean this because we never took
+  // pointer lock: in a locked FPS the browser owns that key and shows its own
+  // overlay. Mute and camera are here rather than only in the menu because
+  // they are the two things someone reaches for mid-sentence, and opening a
+  // panel to find them is exactly the wrong moment for it.
+  useKeybinds({
+    settings: () => setSettingsOpen((open) => !open),
+    mute: () => void media.toggleMic(),
+    camera: () => void media.toggleCamera(),
+  });
 
   return (
     <main className="room">
@@ -73,24 +78,34 @@ export function Table({
       </div>
 
       <header className="hud hud--top">
-        <div className="hud__group">
-          <span className="hud__code">{snapshot.code}</span>
-          <span className="hud__meta">
-            {snapshot.players.length}/{MAX_PLAYERS} seated · {media.state}
-          </span>
+        <div className="hud__group hud__group--stacked">
+          <div className="hud__group">
+            <span className="hud__code">{snapshot.code}</span>
+            <span className="hud__meta">
+              {snapshot.players.length}/{MAX_PLAYERS} seated · {media.state}
+            </span>
+          </div>
+          {/* The keys that are always live, always on screen. The ones that
+              depend on whose turn it is are printed on the action buttons
+              instead, where they mean something. */}
+          <div className="hud__keys">
+            <Kbd bind="settings" /> settings
+            <Kbd bind="mute" /> {media.micMuted ? "unmute" : "mute"}
+            <Kbd bind="camera" /> camera
+          </div>
         </div>
 
         <div className="hud__group">
           {/* Mute and camera stay out here as well as in the menu: they are
               the two things someone reaches for mid-sentence. */}
           <button className="btn" onClick={() => void media.toggleMic()}>
-            {media.micMuted ? "Unmute" : "Mute"}
+            {media.micMuted ? "Unmute" : "Mute"} <Kbd bind="mute" />
           </button>
           <button className="btn" onClick={() => void media.toggleCamera()}>
-            {media.cameraOff ? "Camera on" : "Camera off"}
+            {media.cameraOff ? "Camera on" : "Camera off"} <Kbd bind="camera" />
           </button>
           <button className="btn" onClick={() => setSettingsOpen(true)}>
-            Settings <kbd>Esc</kbd>
+            Settings <Kbd bind="settings" />
           </button>
         </div>
       </header>
@@ -131,6 +146,9 @@ export function Table({
           snapshot={snapshot}
           me={me}
           rejection={rejection}
+          // The menu owns the keyboard while it is open, so a stray F does not
+          // fold the hand behind it.
+          enabled={!settingsOpen}
           onAct={onAct}
         />
       </footer>

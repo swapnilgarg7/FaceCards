@@ -260,14 +260,46 @@ h2 {
   background: rgba(28, 32, 41, 0.78);
   backdrop-filter: blur(6px);
 }
-.hud kbd {
-  margin-left: 0.35rem;
+/* The key chip. One rule, because chips appear on buttons, in the top-left
+   hint strip and in the settings list, and a shortcut that looks different in
+   each of those reads as three different things. */
+.kbd {
+  display: inline-block;
+  min-width: 1.15rem;
   padding: 0.05rem 0.3rem;
   border: 1px solid var(--line);
   border-radius: 4px;
+  background: rgba(8, 10, 14, 0.5);
   color: var(--dim);
   font: inherit;
   font-size: 0.72rem;
+  text-align: center;
+  line-height: 1.35;
+}
+.btn .kbd {
+  margin-left: 0.1rem;
+}
+
+/* Always-live shortcuts, parked under the room code where they are readable
+   without being in the way of a face. */
+.hud__group--stacked {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+.hud__keys {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--dim);
+  font-size: 0.75rem;
+}
+.hud__keys .kbd {
+  margin-left: 0.5rem;
+}
+.hud__keys .kbd:first-child {
+  margin-left: 0;
 }
 
 /* The Escape menu. It covers the scene rather than sitting beside it, which
@@ -338,6 +370,25 @@ h2 {
   flex: 1;
   accent-color: var(--accent);
 }
+.settings__keys {
+  margin: 0 0 0.6rem;
+  display: grid;
+  gap: 0.3rem;
+}
+.settings__key {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+.settings__key dt {
+  flex: 0 0 3.2rem;
+}
+.settings__key dd {
+  margin: 0;
+  color: var(--dim);
+  font-size: 0.85rem;
+}
+
 .settings__hint {
   text-align: center;
 }
@@ -407,7 +458,9 @@ h2 {
    right. The hand readout hugs the left edge so it never crosses the middle
    of the screen, which is where the faces are. */
 .hud--table {
-  top: 4.2rem;
+  /* Clears the top strip, which is now two lines: the room code and the
+     always-live shortcuts under it. */
+  top: 5.9rem;
   left: 1.1rem;
   bottom: 6rem;
   align-items: flex-start;
@@ -546,6 +599,11 @@ h2 {
 }
 .actions--idle {
   min-height: 2.2rem;
+  gap: 1rem;
+}
+/* Nothing here is actionable yet, so it sits back a step from the live bar. */
+.actions--idle .actions__sizing {
+  opacity: 0.65;
 }
 .actions__raise {
   display: flex;
@@ -555,6 +613,18 @@ h2 {
 .actions__slider {
   width: 10rem;
   accent-color: var(--accent);
+}
+/* How to size a raise without touching the slider, next to the slider so the
+   two read as the same control. */
+.actions__sizing {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--dim);
+  font-size: 0.75rem;
+}
+.actions__sizing span {
+  margin-right: 0.4rem;
 }
 
 .note {

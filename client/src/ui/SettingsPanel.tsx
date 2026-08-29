@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { KEYBINDS, RESERVED_KEYS, keyLabel } from "./keybinds.js";
 import type { UseMedia } from "../media/useMedia.js";
 import { DEFAULT_SENSITIVITY } from "../scene/lookCurve.js";
 
@@ -133,6 +134,29 @@ export function SettingsPanel({
             How far the view turns for a given cursor position. Every setting
             still reaches the whole table; a lower one just asks for a more
             deliberate movement to get there.
+          </p>
+        </section>
+
+        <section className="settings__section">
+          <h3>Keyboard</h3>
+          <dl className="settings__keys">
+            {KEYBINDS.map((bind) => (
+              <div key={bind.id} className="settings__key">
+                <dt>
+                  <kbd className="kbd">{keyLabel(bind.id)}</kbd>
+                </dt>
+                <dd>{bind.label}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="note">
+            The mouse turns your head, so reaching for a button swings the view
+            on the way there. Everything you do on your turn has a key so it
+            does not have to.
+          </p>
+          <p className="note">
+            {RESERVED_KEYS.map((k) => k.toUpperCase()).join("")} are left free
+            on purpose, for moving in your seat later.
           </p>
         </section>
 
