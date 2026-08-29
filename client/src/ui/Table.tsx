@@ -12,6 +12,7 @@ import { Kbd } from "./Kbd.js";
 import { Leaderboard } from "./Leaderboard.js";
 import { PeekHint } from "./PeekHint.js";
 import { SettingsPanel, loadSensitivity } from "./SettingsPanel.js";
+import { ShowdownOverlay } from "./ShowdownOverlay.js";
 import { PlayGate } from "./PlayGate.js";
 import { startGate } from "./startGate.js";
 import { VideoTile } from "./VideoTile.js";
@@ -41,6 +42,7 @@ export function Table({
   reconnecting,
   onAct,
   onReady,
+  onNextHand,
   onSitOutChange,
   onBuyIn,
   onLeave,
@@ -54,6 +56,8 @@ export function Table({
   onAct(turn: number, type: PokerActionType, amount?: number): void;
   /** "I am ready." Nothing is dealt to this seat until it has been sent. */
   onReady(): void;
+  /** "I have seen the showdown." The server deals when every seat has. */
+  onNextHand(): void;
   onSitOutChange(sittingOut: boolean): void;
   /** Ask for more chips behind this seat. The server decides how many, and when. */
   onBuyIn(amount: number): void;
@@ -221,12 +225,18 @@ export function Table({
         />
       </div>
 
-      {/* The left column, read top to bottom: who is winning and what it
-          cost them, then the pot and your own hand. It sits on the left rather
-          than the middle because the middle is where the faces are, and it is
-          one column rather than two panels because the standings answer every
-          question the old seat list did, with the buy-in numbers that give
-          them meaning. */}
+      {/* The left column: who is winning and what it cost them. It sits on
+          the left rather than the middle because the middle is where the
+          faces are, and it is one panel rather than two because the standings
+          answer every question the old seat list did, with the buy-in numbers
+          that give them meaning.
+
+          The pot and your own hand used to live under it and no longer do.
+          The pot is projected over the middle of the table with the board
+          (see `scene/holo.ts`), which is where a pot is, and the flat readout
+          of your own two cards has moved down to the footer - directly over
+          the cards it is a fallback for, rather than in the far corner of the
+          screen from them. */}
       <div className="hud hud--table">
         <Leaderboard
           snapshot={snapshot}
@@ -234,7 +244,6 @@ export function Table({
           me={me}
           onBuyIn={onBuyIn}
         />
-        <HandHud snapshot={snapshot} me={me} />
       </div>
 
       {/* The push, while it is happening. The chips in front of your seat are
@@ -257,6 +266,7 @@ export function Table({
           cards on the felt in front of this seat, and the decision on the
           clock sits under it where a player's eyes already are. */}
       <footer className="hud hud--bottom">
+        <HandHud snapshot={snapshot} me={me} />
         <PeekHint hasCards={!!me && me.cardCount > 0} peeking={peeking} />
         {gate.show ? (
           <PlayGate
@@ -284,6 +294,12 @@ export function Table({
           that never executes - which is a fair price for the afternoon it
           saves the next time framing looks wrong. */}
       {import.meta.env.DEV && <FaceDebug media={media} tracking={tracking} />}
+
+      {/* The end of a hand, played out rather than announced: the run-out
+          turns over a card at a time, then every hand that had to show, then
+          the winner - and it stays up until the table asks for the next one.
+          See `ShowdownOverlay.tsx`. */}
+      <ShowdownOverlay snapshot={snapshot} me={me} onNextHand={onNextHand} />
 
       {settingsOpen && (
         <SettingsPanel

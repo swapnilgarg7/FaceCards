@@ -745,17 +745,25 @@ h2 {
   gap: 0.55rem;
 }
 
+/* The flat readout, now at the bottom of the middle of the screen rather than
+   in the left column - directly over the felt it backs up, and one line rather
+   than a stacked panel, because down here it has the width and none of the
+   height. */
 .hand {
   display: flex;
-  flex-direction: column;
-  gap: 0.7rem;
-  max-width: 24rem;
+  justify-content: center;
+  max-width: 28rem;
 }
 .hand__board {
   display: flex;
   gap: 0.7rem;
   align-items: center;
   min-height: 2.4rem;
+  padding: 0.3rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(18, 8, 15, 0.55);
+  backdrop-filter: blur(3px);
 }
 .hand__pot {
   color: var(--dim);
@@ -1606,4 +1614,237 @@ h2 {
 }
 .board__buyin .note {
   margin: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   The showdown.
+
+   The one screen in the product that is allowed to be big. Everything else in
+   the HUD is deliberately small so that it cannot compete with the faces -
+   and this is the single moment where the cards *are* what everybody is
+   looking at, so it takes the middle of the screen and the cards are drawn at
+   the size of the occasion.
+
+   It is a scrim, never a wall. The room is still visible through it, because
+   the faces reacting to a river are half of what just happened and hiding
+   them to show a card would be exactly the wrong trade in this product.
+   ------------------------------------------------------------------------- */
+
+.showdown {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+  /* Pooled, matching the pendant over the table, so the panel reads as
+     something the room lit rather than a sheet dropped over it. */
+  background: radial-gradient(
+    120% 90% at 50% 45%,
+    rgba(10, 4, 9, 0.5) 0%,
+    rgba(10, 4, 9, 0.78) 60%,
+    rgba(10, 4, 9, 0.88) 100%
+  );
+  animation: showdown-in 320ms ease-out both;
+}
+
+@keyframes showdown-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.showdown__panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.1rem;
+  max-width: min(72rem, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  text-align: center;
+}
+
+.showdown__eyebrow {
+  margin: 0;
+  color: var(--accent);
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+}
+
+.showdown__board {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: center;
+}
+
+.showdown__hands {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.6rem;
+  justify-content: center;
+}
+
+.showhand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.42rem;
+  padding: 0.7rem 0.9rem 0.55rem;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  transition: border-color 240ms ease, background 240ms ease;
+}
+/* The winner is lit rather than labelled. A badge would be one more thing to
+   read at the moment when the only question is whose cards those are. */
+.showhand--won {
+  border-color: rgba(217, 180, 81, 0.55);
+  background: rgba(217, 180, 81, 0.09);
+}
+.showhand__who {
+  color: var(--dim);
+  font-size: 0.9rem;
+  letter-spacing: 0.05em;
+}
+.showhand--won .showhand__who {
+  color: var(--accent-bright);
+}
+.showhand__cards {
+  display: flex;
+  gap: 0.45rem;
+}
+.showhand__rank {
+  min-height: 1.1rem;
+  color: var(--text);
+  font-size: 0.88rem;
+}
+.showhand__won {
+  min-height: 1.3rem;
+  color: var(--accent-bright);
+  font-family: var(--font-numeric);
+  font-size: 1.2rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
+}
+
+.showdown__result {
+  min-height: 2.6rem;
+  display: grid;
+  place-items: center;
+}
+.showdown__summary {
+  margin: 0;
+  max-width: 44rem;
+  color: var(--text);
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  line-height: 1.3;
+}
+.showdown__hint {
+  margin: 0;
+  color: var(--dim);
+  font-size: 0.82rem;
+}
+
+.showdown__foot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+}
+.showdown__next {
+  padding: 0.7rem 1.6rem;
+  font-size: 1rem;
+}
+.showdown__waiting {
+  color: var(--dim);
+  font-size: 0.82rem;
+}
+
+/* A card that turns over.
+
+   Two faces back to back, the front rotated away, and the whole thing spun
+   half a turn to reveal it. A fade would be cheaper and would say the wrong
+   thing: at a table somebody turns a card, and the turn is the event. */
+.flip {
+  display: inline-block;
+  width: 4.6rem;
+  height: 6.4rem;
+  perspective: 700px;
+}
+.flip__inner {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transition: transform 520ms cubic-bezier(0.3, 0.9, 0.35, 1);
+}
+.flip--up .flip__inner {
+  transform: rotateY(180deg);
+}
+.flip__face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.1rem;
+  border-radius: 7px;
+  backface-visibility: hidden;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
+}
+/* Drawn to match the atlas on the felt: same paper, same inks, same red
+   back, so the big card is the same deck as the small one. */
+.flip__back {
+  background: repeating-linear-gradient(
+      45deg,
+      rgba(255, 255, 255, 0.16),
+      rgba(255, 255, 255, 0.16) 3px,
+      transparent 3px,
+      transparent 9px
+    ),
+    #8c1f2a;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55),
+    inset 0 0 0 3px rgba(255, 255, 255, 0.35);
+}
+.flip__front {
+  transform: rotateY(180deg);
+  background: linear-gradient(160deg, #fbf8f0, #ece7d9);
+  color: #16181d;
+}
+.flip__front--red {
+  color: #b8232c;
+}
+.flip__front b {
+  font-family: var(--font-numeric);
+  font-size: 2.5rem;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0.04em;
+}
+.flip__front i {
+  font-size: 1.5rem;
+  font-style: normal;
+  line-height: 1;
+}
+/* Not part of the five that won. Still there, no longer the story. */
+.flip--dim {
+  opacity: 0.42;
+  transition: opacity 400ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flip__inner {
+    transition-duration: 1ms;
+  }
+  .showdown {
+    animation-duration: 1ms;
+  }
 }

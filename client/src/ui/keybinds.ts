@@ -33,6 +33,7 @@ export type KeybindId =
   | "raiseUp"
   | "raiseMin"
   | "raiseMax"
+  | "nextHand"
   | "settings"
   | "mute"
   | "camera";
@@ -83,6 +84,9 @@ export const KEYBINDS: readonly Keybind[] = [
   { id: "raiseUp", key: "ArrowRight", label: "Raise the raise" },
   { id: "raiseMin", key: "Home", label: "Minimum raise" },
   { id: "raiseMax", key: "End", label: "Maximum raise" },
+  // Only ever live over a payout, where nothing else on this list can fire:
+  // there is no seat on the clock to fold, check or raise for.
+  { id: "nextHand", key: "Enter", label: "Skip ahead, then deal the next hand" },
   { id: "settings", key: "Escape", label: "Settings" },
   { id: "mute", key: "m", label: "Mute or unmute" },
   { id: "camera", key: "v", label: "Camera on or off" },
@@ -125,6 +129,7 @@ const KEY_NAMES: Record<string, string> = {
   ArrowRight: "→",
   ArrowUp: "↑",
   ArrowDown: "↓",
+  Enter: "⏎",
   " ": "Space",
 };
 
