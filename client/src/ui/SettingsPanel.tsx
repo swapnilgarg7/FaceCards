@@ -1,0 +1,160 @@
+import { useEffect, useRef, useState } from "react";
+import type { UseMedia } from "../media/useMedia.js";
+import { DEFAULT_SENSITIVITY } from "../scene/lookCurve.js";
+
+/**
+ * The Escape menu.
+ *
+ * While it is open the seated look is released, so the cursor is genuinely
+ * free: this is the same job pointer lock's ESC overlay does in an FPS, minus
+ * the lock, which we deliberately never took (see `SeatedCamera`).
+ *
+ * The view holds its angle rather than recentring while the panel is up. You
+ * opened a menu, you did not stand up from the table.
+ */
+
+const SENSITIVITY_KEY = "facecards.look-sensitivity";
+
+/**
+ * A settings value that forgets itself on every reload is a bug with extra
+ * steps. Storage can throw outright in a private window or with site data
+ * blocked, so every access is guarded and the default is always usable.
+ */
+export function loadSensitivity(): number {
+  try {
+    const raw = window.localStorage.getItem(SENSITIVITY_KEY);
+    if (raw === null) return DEFAULT_SENSITIVITY;
+    const value = Number.parseFloat(raw);
+    return Number.isFinite(value) && value >= 0 && value <= 1
+      ? value
+      : DEFAULT_SENSITIVITY;
+  } catch {
+    return DEFAULT_SENSITIVITY;
+  }
+}
+
+function saveSensitivity(value: number): void {
+  try {
+    window.localStorage.setItem(SENSITIVITY_KEY, String(value));
+  } catch {
+    // Not worth surfacing: the setting still applies for this session.
+  }
+}
+
+export interface SettingsPanelProps {
+  roomCode: string;
+  shareUrl: string;
+  media: UseMedia;
+  sensitivity: number;
+  onSensitivityChange(value: number): void;
+  onClose(): void;
+  onLeave(): void;
+}
+
+export function SettingsPanel({
+  roomCode,
+  shareUrl,
+  media,
+  sensitivity,
+  onSensitivityChange,
+  onClose,
+  onLeave,
+}: SettingsPanelProps) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [copied, setCopied] = useState(false);
+
+  // Move focus in on open, so Escape and Tab go somewhere sensible and the
+  // panel is reachable without a mouse at all.
+  useEffect(() => {
+    panelRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    if (!copied) return;
+    const timer = window.setTimeout(() => setCopied(false), 1600);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
+
+  const copyInvite = async () => {
+    try {
+      await navigator.clipboard?.writeText(shareUrl);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  return (
+    <div className="settings" role="dialog" aria-modal="true" aria-label="Settings">
+      <div className="settings__panel" ref={panelRef} tabIndex={-1}>
+        <header className="settings__header">
+          <h2>Settings</h2>
+          <button className="btn btn--ghost" onClick={onClose}>
+            Close
+          </button>
+        </header>
+
+        <section className="settings__section">
+          <h3>Camera and mic</h3>
+          <div className="settings__row">
+            <button className="btn" onClick={() => void media.toggleMic()}>
+              {media.micMuted ? "Unmute mic" : "Mute mic"}
+            </button>
+            <button className="btn" onClick={() => void media.toggleCamera()}>
+              {media.cameraOff ? "Turn camera on" : "Turn camera off"}
+            </button>
+          </div>
+          {media.audioBlocked && (
+            <button className="banner" onClick={() => void media.startAudio()}>
+              Click to enable sound
+            </button>
+          )}
+          {media.error && <p className="note note--error">{media.error}</p>}
+        </section>
+
+        <section className="settings__section">
+          <h3>Look</h3>
+          <label className="settings__slider">
+            <span>Sensitivity</span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={sensitivity}
+              onChange={(event) => {
+                const value = Number.parseFloat(event.target.value);
+                onSensitivityChange(value);
+                saveSensitivity(value);
+              }}
+            />
+          </label>
+          <p className="note">
+            How far the view turns for a given cursor position. Every setting
+            still reaches the whole table; a lower one just asks for a more
+            deliberate movement to get there.
+          </p>
+        </section>
+
+        <section className="settings__section">
+          <h3>Room</h3>
+          <div className="settings__row">
+            <span className="hud__code">{roomCode}</span>
+            <button className="btn" onClick={() => void copyInvite()}>
+              {copied ? "Copied" : "Copy invite link"}
+            </button>
+          </div>
+          <p className="note">Anyone with this link can take a seat.</p>
+        </section>
+
+        <section className="settings__section">
+          <button className="btn btn--ghost" onClick={onLeave}>
+            Leave table
+          </button>
+        </section>
+
+        <p className="note settings__hint">Press Esc to go back to the table.</p>
+      </div>
+    </div>
+  );
+}

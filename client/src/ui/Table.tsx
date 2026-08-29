@@ -1,7 +1,9 @@
+import { useEffect, useState } from "react";
 import { MAX_PLAYERS } from "@facecards/shared";
 import type { UseMedia } from "../media/useMedia.js";
 import type { RoomSnapshot } from "../net/useRoom.js";
 import { Room3D } from "../scene/Room3D.js";
+import { SettingsPanel, loadSensitivity } from "./SettingsPanel.js";
 import { VideoTile } from "./VideoTile.js";
 
 /**
@@ -10,7 +12,8 @@ import { VideoTile } from "./VideoTile.js";
  * The HUD is deliberately sparse. Everything it could show about a player -
  * who they are, whether they are talking, whether they are muted - is already
  * on their avatar, and every element added here is one more thing competing
- * with the faces, which are the product.
+ * with the faces, which are the product. Anything that is not needed mid-hand
+ * lives behind Escape instead.
  */
 export function Table({
   snapshot,
@@ -26,6 +29,21 @@ export function Table({
   onLeave(): void;
 }) {
   const shareUrl = `${window.location.origin}/?room=${snapshot.code}`;
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sensitivity, setSensitivity] = useState(loadSensitivity);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      // Escape is free to mean this, because we never took pointer lock: in a
+      // locked FPS the browser owns this key and shows its own overlay.
+      event.preventDefault();
+      setSettingsOpen((open) => !open);
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   return (
     <main className="room">
@@ -34,46 +52,43 @@ export function Table({
           players={snapshot.players}
           sessionId={sessionId}
           media={media}
+          // The whole point of the Escape menu: the cursor is handed back and
+          // stops dragging the view around with it.
+          lookEnabled={!settingsOpen}
+          sensitivity={sensitivity}
         />
       </div>
 
       <header className="hud hud--top">
         <div className="hud__group">
           <span className="hud__code">{snapshot.code}</span>
-          <button
-            className="btn btn--ghost"
-            onClick={() => void navigator.clipboard?.writeText(shareUrl)}
-          >
-            Copy invite
-          </button>
           <span className="hud__meta">
             {snapshot.players.length}/{MAX_PLAYERS} seated · {media.state}
           </span>
         </div>
 
         <div className="hud__group">
+          {/* Mute and camera stay out here as well as in the menu: they are
+              the two things someone reaches for mid-sentence. */}
           <button className="btn" onClick={() => void media.toggleMic()}>
             {media.micMuted ? "Unmute" : "Mute"}
           </button>
           <button className="btn" onClick={() => void media.toggleCamera()}>
             {media.cameraOff ? "Camera on" : "Camera off"}
           </button>
-          <button className="btn btn--ghost" onClick={onLeave}>
-            Leave
+          <button className="btn" onClick={() => setSettingsOpen(true)}>
+            Settings <kbd>Esc</kbd>
           </button>
         </div>
       </header>
 
-      {media.audioBlocked && (
+      {media.audioBlocked && !settingsOpen && (
         <button
           className="banner hud__banner"
           onClick={() => void media.startAudio()}
         >
           Click to enable sound
         </button>
-      )}
-      {media.error && (
-        <p className="banner banner--error hud__banner">{media.error}</p>
       )}
 
       {/* Self-view. You have no avatar, because you are sitting in that seat,
@@ -102,6 +117,18 @@ export function Table({
           {snapshot.lastBumpBy && ` · ${snapshot.lastBumpBy}`}
         </span>
       </footer>
+
+      {settingsOpen && (
+        <SettingsPanel
+          roomCode={snapshot.code}
+          shareUrl={shareUrl}
+          media={media}
+          sensitivity={sensitivity}
+          onSensitivityChange={setSensitivity}
+          onClose={() => setSettingsOpen(false)}
+          onLeave={onLeave}
+        />
+      )}
     </main>
   );
 }

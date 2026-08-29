@@ -58,6 +58,40 @@ h2 {
   gap: 0.5rem;
   align-items: flex-end;
 }
+/* The invited path: one field and one button, stacked, so the whole thing is
+   name-Enter-seated without a decision in the middle. */
+.lobby__invited {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+.lobby__room {
+  margin: 0;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--dim);
+}
+/* Secondary by construction: smaller, quieter, and below the fold of the
+   decision someone following an invite link has already made. */
+.lobby__alt {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 0.25rem;
+}
+.lobby__alt .btn {
+  padding: 0.4rem 0.6rem;
+  border-color: transparent;
+  color: var(--dim);
+  font-size: 0.85rem;
+}
+.lobby__alt .btn:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--line);
+}
 .lobby__join .field {
   flex: 1;
 }
@@ -194,6 +228,87 @@ h2 {
 .hud .btn {
   background: rgba(28, 32, 41, 0.78);
   backdrop-filter: blur(6px);
+}
+.hud kbd {
+  margin-left: 0.35rem;
+  padding: 0.05rem 0.3rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--dim);
+  font: inherit;
+  font-size: 0.72rem;
+}
+
+/* The Escape menu. It covers the scene rather than sitting beside it, which
+   is what makes it obvious the table is paused and the cursor is yours. */
+.settings {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: rgba(8, 10, 14, 0.62);
+  backdrop-filter: blur(7px);
+}
+.settings__panel {
+  width: min(30rem, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+.settings__panel:focus-visible {
+  outline: 2px solid var(--accent);
+}
+.settings__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+.settings__header h2 {
+  margin: 0;
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 1.15rem;
+}
+.settings__section {
+  padding: 0.9rem 0;
+  border-top: 1px solid var(--line);
+}
+.settings__section h3 {
+  margin: 0 0 0.6rem;
+  color: var(--dim);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.settings__row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.settings__slider {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  font-size: 0.85rem;
+  color: var(--dim);
+}
+.settings__slider input {
+  flex: 1;
+  accent-color: var(--accent);
+}
+.settings__hint {
+  text-align: center;
 }
 
 .code {

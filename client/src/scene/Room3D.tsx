@@ -21,6 +21,10 @@ export interface Room3DProps {
   players: SeatSnapshot[];
   sessionId: string | null;
   media: UseMedia;
+  /** False while an overlay owns the cursor, so the view stops following it. */
+  lookEnabled: boolean;
+  /** 0..1 look sensitivity, from the settings panel. */
+  sensitivity: number;
 }
 
 function Lighting() {
@@ -57,7 +61,13 @@ function Lighting() {
   );
 }
 
-export function Room3D({ players, sessionId, media }: Room3DProps) {
+export function Room3D({
+  players,
+  sessionId,
+  media,
+  lookEnabled,
+  sensitivity,
+}: Room3DProps) {
   const seats = useMemo(() => seatLayout(), []);
   const mySeat = seats[players.find((p) => p.sessionId === sessionId)?.seat ?? 0]!;
 
@@ -80,7 +90,11 @@ export function Room3D({ players, sessionId, media }: Room3DProps) {
 
       <Lighting />
       <PokerTable />
-      <SeatedCamera seat={mySeat} />
+      <SeatedCamera
+        seat={mySeat}
+        lookEnabled={lookEnabled}
+        sensitivity={sensitivity}
+      />
 
       {players
         .filter((player) => player.sessionId !== sessionId)
