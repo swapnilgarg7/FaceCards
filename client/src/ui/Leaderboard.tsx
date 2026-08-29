@@ -7,6 +7,11 @@ import {
 } from "@facecards/shared";
 import type { RoomSnapshot, SeatSnapshot } from "../net/useRoom.js";
 import {
+  buyInProblemText,
+  clampChips,
+  parseChipAmount,
+} from "./chipAmount.js";
+import {
   contestedChips,
   isInHand,
   leaderboard,
@@ -189,6 +194,10 @@ function Row({ row }: { row: LeaderboardRow }) {
  * The wording is the only place the client guesses at anything. A seat in a
  * live hand is told its chips arrive after it, because table stakes says they
  * do; if the guess is ever wrong the chips simply arrive sooner.
+ *
+ * The amount is typed as well as dragged, for the same reason the raise is:
+ * "make it 2,500" is a thought a slider cannot express, and a rebuy is a
+ * round number far more often than it is whatever pixel the thumb landed on.
  */
 function BuyIn({
   snapshot,
@@ -208,13 +217,27 @@ function BuyIn({
   const waits = isInHand(snapshot, me);
 
   const suggested = Math.min(max, Math.max(min, DEFAULT_BUY_IN));
-  const [amount, setAmount] = useState(suggested);
+  // Text rather than a number, so the field can be emptied and retyped. See
+  // `chipAmount.ts` for why the same module decides this and the raise.
+  const [draft, setDraft] = useState(() => String(suggested));
 
   // Follow the bounds as chips are won, lost and delivered, so the control
-  // never sits on a number that has since become illegal.
+  // never sits on a number that has since become illegal. A legal amount is
+  // left exactly as typed - this drags it back into range, it does not tidy
+  // it up.
   useEffect(() => {
-    setAmount((value) => Math.min(max, Math.max(min, value || suggested)));
+    setDraft((text) => {
+      const bounds = { min, max };
+      const current = parseChipAmount(text, bounds);
+      if (current.problem === null) return text;
+      return String(clampChips(current.value ?? suggested, bounds));
+    });
   }, [min, max, suggested]);
+
+  const bounds = { min, max };
+  const parsed = parseChipAmount(draft, bounds);
+  const amount = parsed.value ?? suggested;
+  const ready = parsed.problem === null;
 
   if (!me) return null;
 
@@ -253,36 +276,61 @@ function BuyIn({
     <div className="board__buyin board__buyin--open">
       <label className="board__buyin-slider">
         <span>Buy in for</span>
-        <b>{chips(amount)}</b>
+        <input
+          className={`board__buyin-amount${ready ? "" : " board__buyin-amount--bad"}`}
+          type="text"
+          inputMode="numeric"
+          autoComplete="off"
+          spellCheck={false}
+          value={draft}
+          aria-label="buy-in amount"
+          aria-invalid={!ready}
+          onChange={(event) => setDraft(event.target.value)}
+          onFocus={(event) => event.target.select()}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && ready) {
+              event.preventDefault();
+              onBuyIn(amount);
+              setOpen(false);
+            }
+          }}
+        />
         <input
           type="range"
           min={min}
           max={max}
           step={1}
-          value={amount}
-          aria-label="buy-in amount"
-          onChange={(event) => setAmount(Number(event.target.value))}
+          value={clampChips(amount, bounds)}
+          aria-label="buy-in slider"
+          onChange={(event) => setDraft(event.target.value)}
         />
       </label>
 
       <div className="board__buyin-row">
-        <button className="btn btn--ghost" onClick={() => setAmount(min)}>
+        <button className="btn btn--ghost" onClick={() => setDraft(String(min))}>
           Min {chips(min)}
         </button>
-        <button className="btn btn--ghost" onClick={() => setAmount(max)}>
+        <button className="btn btn--ghost" onClick={() => setDraft(String(max))}>
           Max {chips(max)}
         </button>
       </div>
 
-      <div className="board__buyin-row">
+      {!ready && (
+        <p className="note note--error">
+          {buyInProblemText(parsed.problem!, bounds)}
+        </p>
+      )}
+
+      <div className="board__buyin-row board__buyin-row--commit">
         <button
           className="btn btn--primary"
+          disabled={!ready}
           onClick={() => {
             onBuyIn(amount);
             setOpen(false);
           }}
         >
-          Buy in
+          Buy in {chips(amount)}
         </button>
         <button className="btn btn--ghost" onClick={() => setOpen(false)}>
           Cancel

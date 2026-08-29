@@ -10,6 +10,7 @@ import { FaceDebug } from "./FaceDebug.js";
 import { HandHud } from "./HandHud.js";
 import { Kbd } from "./Kbd.js";
 import { Leaderboard } from "./Leaderboard.js";
+import { PeekHint } from "./PeekHint.js";
 import { SettingsPanel, loadSensitivity } from "./SettingsPanel.js";
 import { VideoTile } from "./VideoTile.js";
 import { useChipPush } from "./useChipPush.js";
@@ -149,9 +150,10 @@ export function Table({
               {snapshot.players.length}/{MAX_PLAYERS} seated · {media.state}
             </span>
           </div>
-          {/* The keys that are always live, always on screen. The ones that
-              depend on whose turn it is are printed on the action buttons
-              instead, where they mean something. */}
+          {/* The keys that are always live and belong to the room rather than
+              to a decision. The ones that depend on whose turn it is are
+              printed on the action buttons instead, where they mean
+              something, and the peek lives over the cards it lifts. */}
           <div className="hud__keys">
             <Kbd bind="lookUp" />
             <Kbd bind="lookLeft" />
@@ -160,7 +162,6 @@ export function Table({
             <Kbd bind="settings" /> settings
             <Kbd bind="mute" /> {media.micMuted ? "unmute" : "mute"}
             <Kbd bind="camera" /> camera
-            <Kbd bind="peek" /> hold to peek
           </div>
         </div>
 
@@ -244,7 +245,11 @@ export function Table({
         </div>
       )}
 
+      {/* Bottom centre, stacked: the peek hint sits directly over the two
+          cards on the felt in front of this seat, and the decision on the
+          clock sits under it where a player's eyes already are. */}
       <footer className="hud hud--bottom">
+        <PeekHint hasCards={!!me && me.cardCount > 0} peeking={peeking} />
         <ActionBar
           snapshot={snapshot}
           me={me}
