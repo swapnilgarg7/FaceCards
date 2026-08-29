@@ -941,3 +941,32 @@ export const INLAY = {
   /** Under the rail's inner lip, so the two meet without a gap. */
   railInner: RAIL_INNER,
 } as const;
+
+/* ---------------------------------------------------------------- portrait
+ *
+ * The one texture in this file that is a file.
+ *
+ * Everything above is drawn because a downloaded surface would cost a licence
+ * row and could not be parameterised by the geometry. A portrait is neither of
+ * those things: it is a photograph, it has to *be* the photograph, and there
+ * is nothing to parameterise. So it loads, and the room draws black where it
+ * goes until it arrives - which is a ceiling in a dark room, so nobody sees
+ * the gap.
+ *
+ * Module-cached and never disposed, like every other texture here: eight
+ * medallions share one image and one upload.
+ */
+let portrait: THREE.Texture | null = null;
+
+export function portraitTexture(): THREE.Texture {
+  if (portrait) return portrait;
+  const texture = new THREE.TextureLoader().load("/textures/ravi.jpg");
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 4;
+  // Seen from four metres away at a glancing angle, so the mips do all the
+  // work and the top level is never sampled. 447px is already more than the
+  // medallion is ever drawn at.
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  portrait = texture;
+  return portrait;
+}

@@ -51,7 +51,11 @@ const RED_SUITS = new Set(["d", "h"]);
 
 const INK_BLACK = "#16181d";
 const INK_RED = "#b8232c";
+/** The ground the whole atlas sits on, so a mipmap never blends in the dark. */
 const PAPER = "#f6f3ec";
+/** The two stops the showdown card's CSS uses, so both decks are one deck. */
+const PAPER_LIGHT = "#fbf8f0";
+const PAPER_DARK = "#ece7d9";
 
 /** Where a slot sits in the atlas, in UV space. */
 export interface AtlasCell {
@@ -75,17 +79,9 @@ export function atlasCell(slot: number): AtlasCell {
 }
 
 let atlas: THREE.CanvasTexture | null = null;
+let atlasCanvas: HTMLCanvasElement | null = null;
 
-/** The one card texture. Built on first use, kept for the life of the tab. */
-export function cardAtlasTexture(): THREE.CanvasTexture {
-  if (atlas) return atlas;
-
-  const el = document.createElement("canvas");
-  el.width = COLUMNS * CELL_WIDTH;
-  el.height = ROWS * CELL_HEIGHT;
-  const ctx = el.getContext("2d");
-  if (!ctx) throw new Error("2D canvas context unavailable");
-
+function paintAtlas(ctx: CanvasRenderingContext2D, el: HTMLCanvasElement): void {
   // The gaps between cells are never sampled - every UV rect is a whole cell -
   // but a mipmap blends across them, so the ground has to be paper rather than
   // transparent black or every card would gain a dark halo when minified.
@@ -97,6 +93,20 @@ export function cardAtlasTexture(): THREE.CanvasTexture {
   }
   drawBack(ctx, BACK_SLOT);
   drawEdge(ctx, EDGE_SLOT);
+}
+
+/** The one card texture. Built on first use, kept for the life of the tab. */
+export function cardAtlasTexture(): THREE.CanvasTexture {
+  if (atlas) return atlas;
+
+  const el = document.createElement("canvas");
+  el.width = COLUMNS * CELL_WIDTH;
+  el.height = ROWS * CELL_HEIGHT;
+  const ctx = el.getContext("2d");
+  if (!ctx) throw new Error("2D canvas context unavailable");
+
+  paintAtlas(ctx, el);
+  atlasCanvas = el;
 
   const texture = new THREE.CanvasTexture(el);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -134,46 +144,84 @@ function roundedCard(
 }
 
 /**
- * The one device every face carries: suit, rank, suit, stacked up the middle.
+ * The one device every face carries: rank over suit, centred, plus the index.
  *
  * Not a pip grid. A real seven prints seven hearts, and at the size a card is
  * actually read here - roughly forty screen pixels tall, at an angle, from
  * across the table - seven of anything is a smudge, and the columns wide
- * enough to hold them run straight through the corner index. Online rooms all
- * settled on the same answer long ago: one big rank, the suit repeated above
- * and below it, nothing else. A seven is then *read* rather than counted,
- * which is the entire job a card face has here.
+ * enough to hold them run straight through the corner index.
+ *
+ * So the middle is left clean and carries exactly what the showdown card
+ * carries: one large rank with its suit set under it, and nothing else. The
+ * two decks a player meets in a hand - the cards lying on the felt and the
+ * card that turns over at the end - then read as the same deck, which is the
+ * point of drawing both rather than sourcing one.
+ *
+ * The corner index is what a real card adds on top of that, and it is why a
+ * card can be read at all when it is half covered by the one in front of it:
+ * rank over suit, small, top-left and repeated inverted at bottom-right, so a
+ * hand fanned either way is still legible from a corner alone.
  *
  * Courts and the ace take the same device. On a real deck they differ because
  * an engraving exists to be looked at; here every face has to survive the same
  * forty pixels, so they are drawn the same way and told apart by their letter.
- *
- * The lower pip is printed inverted, as the lower half of a real card is, so a
- * hand reads the same picked up either way up.
  */
-const RANK_SIZE = 66;
-const CENTRE_PIP_SIZE = 34;
-/** Distance from the middle of the card to each central pip, in cell pixels. */
-const CENTRE_PIP_OFFSET = 41;
+/** Centre device, sized against the showdown card's 2.5rem / 1.5rem pair. */
+const CENTRE_RANK_SIZE = 78;
+const CENTRE_SUIT_SIZE = 40;
+/** Offsets from the middle of the cell, so the pair sits optically centred. */
+const CENTRE_RANK_OFFSET = -18;
+const CENTRE_SUIT_OFFSET = 32;
 /** Corner index: kept small enough that it never meets the central device. */
-const CORNER_X = 18;
-const CORNER_RANK_SIZE = 28;
-const CORNER_RANK_BASELINE = 34;
-const CORNER_PIP_SIZE = 21;
-const CORNER_PIP_BASELINE = 58;
+const CORNER_X = 17;
+const CORNER_RANK_SIZE = 30;
+const CORNER_RANK_BASELINE = 37;
+const CORNER_SUIT_SIZE = 21;
+const CORNER_SUIT_BASELINE = 60;
 
 /**
- * The index font, set narrower for the ten.
+ * The rank face, set narrower for the ten.
+ *
+ * `Bebas Neue` is what `--font-numeric` resolves to, so a rank on the felt is
+ * the same letterform as the rank on the showdown card, the rail plaques and
+ * every chip count in the room - one numeric voice rather than the browser's
+ * default sans turning up on the cards alone.
  *
  * "10" is two glyphs where every other index is one, so at the same size it is
  * nearly twice as wide: in the corner it would cross the border, and in the
- * middle it would run into the pips above and below. Dropping the size for the
+ * middle it would outgrow the suit beneath it. Dropping the size for the
  * two-character label lands it in the same footprint as an ace, which is what
  * a real deck does with its ten as well.
  */
 function rankFont(rank: string, size: number): string {
-  const px = rank.length > 1 ? Math.round(size * 0.72) : size;
-  return `bold ${px}px ui-sans-serif, system-ui, sans-serif`;
+  const px = rank.length > 1 ? Math.round(size * 0.78) : size;
+  return `400 ${px}px "Bebas Neue", "Oswald", "Arial Narrow", ui-sans-serif, sans-serif`;
+}
+
+/**
+ * The suit face.
+ *
+ * The shipped `Bebas Neue` is a latin subset and has no suit glyphs, so they
+ * are asked for in the UI face directly rather than left to fall out of a
+ * per-glyph fallback.
+ */
+function suitFont(size: number): string {
+  return `${size}px ui-sans-serif, system-ui, sans-serif`;
+}
+
+/**
+ * The paper, as a gradient rather than a flat fill, into the current path.
+ *
+ * The same two stops at the same angle the showdown card's CSS uses. Flat
+ * white under the table's warm spots reads as a sticker; the faint fall across
+ * the face is what makes it read as stock.
+ */
+function paintPaper(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+  const paper = ctx.createLinearGradient(x, y, x + CELL_WIDTH, y + CELL_HEIGHT);
+  paper.addColorStop(0, PAPER_LIGHT);
+  paper.addColorStop(1, PAPER_DARK);
+  ctx.fillStyle = paper;
+  ctx.fill();
 }
 
 function drawFace(ctx: CanvasRenderingContext2D, slot: number): void {
@@ -186,8 +234,7 @@ function drawFace(ctx: CanvasRenderingContext2D, slot: number): void {
 
   ctx.save();
   roundedCard(ctx, x, y);
-  ctx.fillStyle = PAPER;
-  ctx.fill();
+  paintPaper(ctx, x, y);
   ctx.strokeStyle = "rgba(0,0,0,0.22)";
   ctx.lineWidth = 2;
   ctx.stroke();
@@ -200,16 +247,10 @@ function drawFace(ctx: CanvasRenderingContext2D, slot: number): void {
   const centreX = x + CELL_WIDTH / 2;
   const centreY = y + CELL_HEIGHT / 2;
 
-  ctx.font = `${CENTRE_PIP_SIZE}px ui-sans-serif, system-ui, sans-serif`;
-  ctx.fillText(glyph, centreX, centreY - CENTRE_PIP_OFFSET);
-  ctx.save();
-  ctx.translate(centreX, centreY + CENTRE_PIP_OFFSET);
-  ctx.rotate(Math.PI);
-  ctx.fillText(glyph, 0, 0);
-  ctx.restore();
-
-  ctx.font = rankFont(rank, RANK_SIZE);
-  ctx.fillText(rank, centreX, centreY + 2);
+  ctx.font = rankFont(rank, CENTRE_RANK_SIZE);
+  ctx.fillText(rank, centreX, centreY + CENTRE_RANK_OFFSET);
+  ctx.font = suitFont(CENTRE_SUIT_SIZE);
+  ctx.fillText(glyph, centreX, centreY + CENTRE_SUIT_OFFSET);
 
   // Corner index, top-left and bottom-right rotated, as on a real card, so a
   // card is readable whichever way up it is picked up.
@@ -224,14 +265,31 @@ function drawFace(ctx: CanvasRenderingContext2D, slot: number): void {
     ctx.textBaseline = "alphabetic";
     ctx.font = rankFont(rank, CORNER_RANK_SIZE);
     ctx.fillText(rank, CORNER_X, CORNER_RANK_BASELINE);
-    ctx.font = `${CORNER_PIP_SIZE}px ui-sans-serif, system-ui, sans-serif`;
-    ctx.fillText(glyph, CORNER_X, CORNER_PIP_BASELINE);
+    ctx.font = suitFont(CORNER_SUIT_SIZE);
+    ctx.fillText(glyph, CORNER_X, CORNER_SUIT_BASELINE);
     ctx.restore();
   };
   corner(false);
   corner(true);
 
   ctx.restore();
+}
+
+/**
+ * Repaint every face once the webfonts have settled.
+ *
+ * The same problem `plaques.ts` has, and the same fix: canvas does not wait
+ * for a font, it substitutes silently and draws. The atlas is built once and
+ * never again, so one painted while `Bebas Neue` was still in flight would
+ * carry fallback ranks for the whole session. A no-op before the atlas exists,
+ * which is the case where it will be painted with the font already resolved.
+ */
+export function repaintCardAtlas(): void {
+  if (!atlas || !atlasCanvas) return;
+  const ctx = atlasCanvas.getContext("2d");
+  if (!ctx) return;
+  paintAtlas(ctx, atlasCanvas);
+  atlas.needsUpdate = true;
 }
 
 function drawBack(ctx: CanvasRenderingContext2D, slot: number): void {

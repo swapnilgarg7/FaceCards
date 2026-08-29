@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App.js";
+import { repaintCardAtlas } from "./scene/cardAtlas.js";
 import { repaintPlaques } from "./scene/plaques.js";
 import { warmSurfaces } from "./scene/surfaces.js";
 import "./styles.css";
@@ -13,7 +14,9 @@ if (!host) throw new Error("#root missing from index.html");
  * substitutes silently and draws. The rail plaques and the dealer button are
  * painted into canvases and only repainted when their number changes, so a
  * plate drawn during the first few hundred milliseconds of a session would
- * keep its fallback face until that seat happened to bet.
+ * keep its fallback face until that seat happened to bet. The card atlas is
+ * worse: it is painted once and never again, so ranks drawn before the face
+ * arrived would stay in the fallback for the whole session.
  *
  * Loading the two faces up front and repainting once is the whole fix - a
  * handful of small canvases redrawn, once, before anyone has sat down. The DOM
@@ -27,10 +30,14 @@ void Promise.all([
   document.fonts.load('700 16px "Cinzel Decorative"'),
   document.fonts.load('400 16px "Bebas Neue"'),
 ])
-  .then(() => repaintPlaques())
+  .then(() => {
+    repaintPlaques();
+    repaintCardAtlas();
+  })
   .catch(() => {
-    // No `document.fonts`, or a face that failed to fetch. The fallback chain
-    // in `plaques.ts` is a real chain, so there is nothing to recover from.
+    // No `document.fonts`, or a face that failed to fetch. The fallback chains
+    // in `plaques.ts` and `cardAtlas.ts` are real chains, so there is nothing
+    // to recover from.
   });
 
 /**
