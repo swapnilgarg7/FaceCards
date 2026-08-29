@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { MAX_PLAYERS, type PokerActionType } from "@facecards/shared";
 import { useTableAudio } from "../audio/useTableAudio.js";
 import { useFaceTracking } from "../avatars/useFaceTracking.js";
@@ -93,10 +93,25 @@ export function Table({
   // sensitivity: it is a preference about how much HUD somebody wants over
   // the room, not a thing about this hand.
   const [standingsOpen, setStandingsOpen] = useState(loadStandingsOpen);
-  const changeStandings = useCallback((open: boolean) => {
-    setStandingsOpen(open);
-    saveStandingsOpen(open);
-  }, []);
+  const changeStandings = useCallback(
+    (open: boolean) => {
+      setStandingsOpen(open);
+      // Only a column has a state worth remembering. Compact turns this into a
+      // sheet over the whole room, and "it was up when I closed the app" is
+      // not a preference anybody expressed about that - it would just be a
+      // table hidden behind a panel on arrival. It is also not allowed to
+      // overwrite what a player chose on their laptop.
+      if (!view.compact) saveStandingsOpen(open);
+    },
+    [view.compact],
+  );
+
+  // Put the sheet away the moment there is no room for a column, which covers
+  // both arriving on a phone with the preference set and dragging a desktop
+  // window narrow mid-hand.
+  useEffect(() => {
+    if (view.compact) setStandingsOpen(false);
+  }, [view.compact]);
 
   // The table's own sound, derived from the difference between one snapshot
   // and the next. See `audio/cues.ts`: there is no event stream, only state
@@ -208,8 +223,13 @@ export function Table({
           {/* The keys that are always live and belong to the room rather than
               to a decision. The ones that depend on whose turn it is are
               printed on the action buttons instead, where they mean
-              something, and the peek lives over the cards it lifts. */}
-          {!view.touch && (
+              something, and the peek lives over the cards it lifts.
+
+              Off on a touchscreen because there is no keyboard, and off on a
+              narrow window because there is no line: eight chips and five
+              labels is a strip wider than a phone, and what it does at that
+              width is run under the self-view. */}
+          {!view.compact && !view.touch && (
             <div className="hud__keys">
               <Kbd bind="lookUp" />
               <Kbd bind="lookLeft" />

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, type RefObject } from "react";
+import { useEffect, useMemo, useRef, type RefObject } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { ACESFilmicToneMapping, PerspectiveCamera } from "three";
 import { Avatar } from "../avatars/Avatar.js";
@@ -180,11 +180,29 @@ export function Room3D({
     return seat ? [{ peerId: player.sessionId, seat }] : [];
   });
 
+  // Multisampling is a property of the WebGL context, so it is decided when
+  // the context is created and can never be changed afterwards. R3F builds its
+  // renderer exactly once for the life of a `<Canvas>` and quietly ignores a
+  // later `antialias` - so writing `antialias={!lite}` inline would read as a
+  // live setting while being a dead one, which is worse than not having it.
+  //
+  // Captured at first render instead, which is the moment it is actually read,
+  // and correct for the case that matters: `useViewport` measures the screen
+  // before anything mounts, so a phone creates its context without MSAA in the
+  // first place. A device that later crosses the threshold - a tablet turned
+  // sideways - keeps whatever it started with, and still gets the two savings
+  // that *can* be applied live below. Rebuilding the renderer to recover the
+  // third would throw away the whole scene and every texture in it, which
+  // costs far more than the multisampling is worth.
+  const antialias = useRef(!lite).current;
+
   return (
     <Canvas
       // The contact shadow under the chips is most of what sells the felt as
       // a surface - and on a handset it is also the single most expensive
       // thing in the frame. A phone keeps the faces and loses the shadow.
+      // This one does take effect on a later render: R3F reapplies it to the
+      // existing renderer's shadow map rather than rebuilding anything.
       shadows={!lite}
       // Cap the pixel ratio: a Retina MacBook Air renders four times the
       // pixels for a difference nobody sees on a stylised scene, and the 60
@@ -192,7 +210,7 @@ export function Room3D({
       // phone at DPR 3 is nine times the pixels, on a tenth of the GPU.
       dpr={lite ? [1, 1.5] : [1, 1.75]}
       camera={{ fov: fitFov(window.innerWidth, window.innerHeight), near: 0.05, far: 40 }}
-      gl={{ antialias: !lite, powerPreference: "high-performance" }}
+      gl={{ antialias, powerPreference: "high-performance" }}
       onCreated={({ gl }) => {
         gl.toneMapping = ACESFilmicToneMapping;
         gl.toneMappingExposure = 1.05;

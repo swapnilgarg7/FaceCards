@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  DRAG_SPAN_PX,
+  DRAG_PITCH_SPAN_PX,
+  DRAG_YAW_SPAN_PX,
   applyDragLook,
   dragLookScale,
   fitFov,
@@ -70,11 +71,27 @@ describe("applyDragLook", () => {
     expect(angles.yaw).toBeCloseTo(applyDragLook(ZERO, 80, 0, 1).yaw, 10);
   });
 
-  it("reaches the whole arc within one span of drag", () => {
-    // The seat opposite has to be one thumb movement away, or the product's
-    // one job - looking at the person you are talking to - costs three.
-    const left = applyDragLook(ZERO, -DRAG_SPAN_PX / 2, 0, 1);
-    expect(left.yaw).toBeCloseTo(MAX_LOOK_YAW, 6);
+  it("reaches each end of each arc in one span of drag", () => {
+    // The seat opposite has to be one sweep away, or the product's one job -
+    // looking at the person you are talking to - costs three.
+    expect(applyDragLook(ZERO, -DRAG_YAW_SPAN_PX / 2, 0, 1).yaw).toBeCloseTo(
+      MAX_LOOK_YAW,
+      6,
+    );
+    expect(
+      applyDragLook(ZERO, 0, DRAG_PITCH_SPAN_PX, 1).pitch,
+    ).toBeCloseTo(-MAX_LOOK_PITCH_DOWN, 6);
+  });
+
+  it("gives the two axes their own rate rather than one shared one", () => {
+    // The arcs differ by a factor of three, so a single pixels-per-radian
+    // figure leaves one of them unusable. The same 60px of thumb turns the
+    // head further in absolute terms sideways, and yet covers far more of the
+    // much shorter vertical arc - which is what makes both feel right.
+    const yaw = applyDragLook(ZERO, -60, 0, 1).yaw;
+    const pitch = applyDragLook(ZERO, 0, -60, 1).pitch;
+    expect(yaw).toBeGreaterThan(pitch);
+    expect(yaw / MAX_LOOK_YAW).toBeLessThan(pitch / MAX_LOOK_PITCH_UP);
   });
 
   it("never leaves the arc the cursor and the keys are held to", () => {

@@ -2040,14 +2040,17 @@ textarea {
      to miss is a control pressed twice, and one of these mutes you. */
   min-height: 2.4rem;
 }
-/* Under everything rather than under the top strip: at this width the strip is
-   where the room code and four controls already are. */
+/* Still under the top strip, but no longer centred on the screen: it has to
+   clear the self-view in the right-hand corner, and a banner half under a
+   video tile is a banner nobody finishes reading. */
 :root[data-compact="true"] .hud__banner {
-  top: auto;
-  bottom: calc(0.6rem + env(safe-area-inset-bottom));
-  width: calc(100% - 1.6rem);
-  max-width: 24rem;
-  font-size: 0.8rem;
+  top: calc(3.5rem + env(safe-area-inset-top));
+  left: calc(0.6rem + env(safe-area-inset-left));
+  right: calc(6.6rem + env(safe-area-inset-right));
+  width: auto;
+  max-width: none;
+  transform: none;
+  font-size: 0.78rem;
   text-align: center;
 }
 
@@ -2238,6 +2241,13 @@ textarea {
 }
 :root[data-compact="true"] .showdown__next {
   min-height: 3rem;
+}
+
+/* Dev only, and never in a production build - but at this width it lands on
+   top of the action bar, which makes the readout useless exactly where it
+   would be most wanted. */
+:root[data-compact="true"] .facedebug {
+  display: none;
 }
 
 /* ---- Touch: what a finger cannot do ---- */

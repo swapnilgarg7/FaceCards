@@ -37,19 +37,33 @@ export function fitFov(width: number, height: number): number {
 }
 
 /**
- * Pixels of drag that sweep the whole arc at the default sensitivity.
+ * Pixels of drag that sweep each axis end to end at the default sensitivity.
  *
- * Deliberately less than a screen's width: turning to look at the player
- * opposite must be one thumb movement, not three. It is the same reasoning as
- * `TRAVEL_PX` on the chip push, and the same number would be wrong here -
- * pushing chips wants deliberation, looking around does not.
+ * Two numbers rather than one, because the two arcs are nothing like the same
+ * size: 200 degrees of yaw against 64 of pitch. Driving both from a single
+ * pixels-per-radian figure makes one of them useless - either the head snaps
+ * a third of the way round the table for a flick of the thumb, or looking
+ * down at your own cards takes a swipe longer than the screen.
+ *
+ * Yaw is a little over a phone screen wide, so turning to the player opposite
+ * is one confident sweep and a nudge is still a nudge. Pitch is shorter than
+ * the screen is tall, because the whole vertical arc is the felt at one end
+ * and the pendant at the other and there is nothing in between worth a long
+ * gesture.
  */
-export const DRAG_SPAN_PX = 340;
+export const DRAG_YAW_SPAN_PX = 560;
+export const DRAG_PITCH_SPAN_PX = 320;
 
-/** 0..1 from the settings slider -> how far a pixel of drag turns the head. */
+/**
+ * 0..1 from the settings slider -> how far a pixel of drag turns the head.
+ *
+ * Multiplies the spans above rather than the arc, so - exactly as on the
+ * desktop curve - no setting can change how far round the table a player can
+ * see. It only changes what it costs them to get there.
+ */
 export function dragLookScale(sensitivity: number): number {
   const s = Math.min(1, Math.max(0, sensitivity));
-  return 0.55 + s * 1.1;
+  return 0.5 + s;
 }
 
 export interface LookAngles {
@@ -84,9 +98,9 @@ export function applyDragLook(
 ): LookAngles {
   if (!Number.isFinite(dx) || !Number.isFinite(dy)) return current;
 
-  const yawPerPx = ((2 * MAX_LOOK_YAW) / DRAG_SPAN_PX) * scale;
+  const yawPerPx = ((2 * MAX_LOOK_YAW) / DRAG_YAW_SPAN_PX) * scale;
   const pitchPerPx =
-    ((MAX_LOOK_PITCH_UP + MAX_LOOK_PITCH_DOWN) / DRAG_SPAN_PX) * scale;
+    ((MAX_LOOK_PITCH_UP + MAX_LOOK_PITCH_DOWN) / DRAG_PITCH_SPAN_PX) * scale;
 
   return {
     yaw: clamp(current.yaw - dx * yawPerPx, -MAX_LOOK_YAW, MAX_LOOK_YAW),
