@@ -1,0 +1,11 @@
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+.env
+.env.local
+.DS_Store
+coverage/
+docker/livekit/*.local.yaml
+dist-types/
+*.d.ts.map

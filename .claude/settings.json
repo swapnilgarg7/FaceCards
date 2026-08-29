@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(npm run:*)",
+      "Bash(npm test:*)",
+      "Bash(npm ci)",
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npx vitest:*)",
+      "Bash(npx eslint:*)",
+      "Bash(npx prettier:*)",
+      "Bash(npx gltf-transform:*)",
+      "Bash(npx gltfjsx:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "Bash(du:*)",
+      "Bash(file:*)",
+      "WebFetch(domain:threejs.org)",
+      "WebFetch(domain:docs.pmnd.rs)",
+      "WebFetch(domain:r3f.docs.pmnd.rs)",
+      "WebFetch(domain:docs.livekit.io)",
+      "WebFetch(domain:docs.colyseus.io)",
+      "WebFetch(domain:supabase.com)",
+      "WebFetch(domain:polyhaven.com)",
+      "WebFetch(domain:ambientcg.com)",
+      "WebFetch(domain:poly.pizza)",
+      "WebFetch(domain:kenney.nl)",
+      "WebFetch(domain:quaternius.com)",
+      "WebFetch(domain:opengameart.org)",
+      "WebFetch(domain:freesound.org)",
+      "WebFetch(domain:www.npmjs.com)"
+    ],
+    "deny": [
+      "Read(./**/.env)",
+      "Read(./**/.env.*)",
+      "Read(./server/.env)",
+      "Bash(git push:*)",
+      "Bash(npm publish:*)",
+      "Bash(rm -rf:*)"
+    ]
+  },
+  "env": {
+    "NODE_ENV": "development"
+  }
+}

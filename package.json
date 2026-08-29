@@ -1,0 +1,37 @@
+{
+  "name": "facecards",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Virtual Poker Night: browser multiplayer Hold'em with live webcam faces on 3D avatars",
+  "workspaces": [
+    "shared",
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "build": "npm run build -w @facecards/client",
+    "dev": "concurrently -n server,client -c magenta,cyan \"npm run dev -w @facecards/server\" \"npm run dev -w @facecards/client\"",
+    "dev:client": "npm run dev -w @facecards/client",
+    "dev:server": "npm run dev -w @facecards/server",
+    "livekit:down": "docker compose -f docker/livekit/docker-compose.yml down",
+    "livekit:logs": "docker compose -f docker/livekit/docker-compose.yml logs -f",
+    "livekit:up": "docker compose -f docker/livekit/docker-compose.yml up -d",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -b --pretty tsconfig.json",
+    "verify:phase0": "tsx scripts/verify-phase0.mjs"
+  },
+  "devDependencies": {
+    "@colyseus/sdk": "0.17.43",
+    "@types/node": "^26.4.0",
+    "concurrently": "^10.0.5",
+    "tsx": "^4.23.12",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11",
+    "ws": "^8.18.3"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

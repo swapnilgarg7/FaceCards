@@ -1,0 +1,25 @@
+# Local development LiveKit server.
+#
+# These keys are development-only and are committed on purpose so `npm run
+# livekit:up` works with no setup. They must never appear in a deployed
+# environment: production keys come from LiveKit Cloud (or your own host) and
+# live only in the server's environment.
+port: 7880
+bind_addresses:
+  - 0.0.0.0
+
+rtc:
+  # A fixed, small UDP range keeps the compose port mapping honest. Wider is
+  # better in production; here it only has to carry a few local tabs.
+  port_range_start: 50000
+  port_range_end: 50019
+  tcp_port: 7881
+  # Everything is on this machine, so no external IP discovery is needed and
+  # skipping it removes a startup network round trip.
+  use_external_ip: false
+
+keys:
+  devkey: devsecretdevsecretdevsecretdevsecret
+
+logging:
+  level: info

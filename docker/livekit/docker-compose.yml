@@ -1,0 +1,19 @@
+# Local LiveKit SFU for daily development.
+#
+# LiveKit Cloud's free tier is 5,000 participant-minutes/month, which is about
+# 13 six-player hours. Burning that on "does the video texture flip correctly"
+# leaves nothing for real playtests, so daily work runs against this instead.
+services:
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: facecards-livekit
+    command: --config /etc/livekit.yaml --node-ip 127.0.0.1
+    restart: unless-stopped
+    # Host networking would be simpler but is Linux-only; the explicit port
+    # list works the same on Docker Desktop for Mac and Windows.
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "50000-50019:50000-50019/udp"
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro

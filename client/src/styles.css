@@ -1,0 +1,233 @@
+/* Phase 0 is a spike. Legible beats beautiful; phase 5 owns the art. */
+
+:root {
+  color-scheme: dark;
+  --bg: #14171d;
+  --panel: #1c2029;
+  --line: #2c323e;
+  --text: #e7e9ee;
+  --dim: #939aa8;
+  --accent: #d4af37;
+  --error: #ff8080;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+}
+
+h1,
+h2 {
+  margin: 0 0 0.5rem;
+  font-weight: 600;
+}
+h1 {
+  font-size: 1.4rem;
+}
+h2 {
+  font-size: 0.95rem;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.lobby {
+  max-width: 26rem;
+  margin: 12vh auto;
+  padding: 0 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+.lobby__sub {
+  margin: 0;
+  color: var(--dim);
+}
+.lobby__or {
+  color: var(--dim);
+  text-align: center;
+}
+.lobby__join {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-end;
+}
+.lobby__join .field {
+  flex: 1;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  color: var(--dim);
+}
+.field input {
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+}
+.field input:focus-visible {
+  outline: 2px solid var(--accent);
+}
+
+.btn {
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.btn:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #20180a;
+  font-weight: 600;
+}
+.btn--ghost {
+  background: transparent;
+}
+
+.table {
+  max-width: 68rem;
+  margin: 0 auto;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+.table__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.table__controls {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.code {
+  color: var(--accent);
+  letter-spacing: 0.12em;
+}
+
+.banner {
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.banner--error {
+  border-color: var(--error);
+  color: var(--error);
+  cursor: default;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 0.9rem;
+}
+
+.tile {
+  margin: 0;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #000;
+}
+.tile--speaking {
+  border-color: var(--accent);
+}
+.tile__video {
+  aspect-ratio: 16 / 9;
+  position: relative;
+  background: #000;
+}
+.tile__placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--dim);
+  font-size: 0.85rem;
+}
+.tile__label {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  background: var(--panel);
+  font-size: 0.85rem;
+}
+.tile__label [aria-label="muted"] {
+  color: var(--error);
+}
+
+.panel {
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.counter {
+  margin: 0 0 0.6rem;
+  font-size: 3rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
+.seats {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.seats li {
+  display: flex;
+  gap: 0.6rem;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.private {
+  color: var(--dim);
+  font-size: 0.8rem;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+
+.note {
+  margin: 0.5rem 0 0;
+  color: var(--dim);
+  font-size: 0.85rem;
+}
+.note--error {
+  color: var(--error);
+}
