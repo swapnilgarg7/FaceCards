@@ -160,3 +160,142 @@ export function muckSpot(seat: Seat, index: number): CardSpot {
   const scale = toCentre === 0 ? 0 : (toCentre - 0.11) / toCentre;
   return { ...spot, x: spot.x * scale, z: spot.z * scale };
 }
+
+/** Face down and face up, as a rotation about the card's own long axis. */
+export const FACE_DOWN_PITCH = Math.PI / 2;
+export const FACE_UP_PITCH = -Math.PI / 2;
+
+/**
+ * Where a peeked hand is held, and how it is turned.
+ *
+ * The numbers are geometry rather than taste, and they come off the seat. The
+ * eye is at `EYE_HEIGHT` and sits `SEAT_OUTSET` back from a table of
+ * `TABLE.radius`, so a hand resting on the felt is about 40cm below the eye and
+ * 43cm in front of it - roughly 43 degrees down, which is outside a 55 degree
+ * lens pointed level. That is the whole of what was wrong with the first
+ * version of this gesture: it lifted the pair four centimetres and pulled it
+ * four centimetres *towards* the player, which takes a hand that is already
+ * below the frame and moves it further under the chin. The cards went in your
+ * pocket.
+ *
+ * So the peek is the gesture it is named after. The hand comes **up**, to
+ * about 15cm under the eye and a third of a metre in front of it, where it is
+ * in frame without anybody having to look down, and it turns to face exactly
+ * one pair of eyes. `PEEK_PITCH` is the angle whose normal points from there
+ * back at the eye, so the rise, the draw and the pitch move together or not at
+ * all - `cards.test.ts` holds them to it.
+ */
+const PEEK_PITCH = -0.43;
+const PEEK_RISE = 0.26;
+const PEEK_DRAW = 0.1;
+
+/**
+ * How the pair opens: a fan.
+ *
+ * Both cards hinge about one point below the hand, so their tops splay apart
+ * while their bottoms stay together. That is what a fan is, it is what two
+ * cards held in one hand actually do, and it is the only version of this that
+ * solves the real problem. At rest the pair *overlaps*, deliberately, because
+ * that is what a hand lying on felt looks like - but two overlapping cards
+ * lifted to the same angle are two nearly-coplanar quads with the near one
+ * covering a fifth of the far one. The covered fifth is the corner index,
+ * which is the one part of a card anybody picks a hand up to read.
+ *
+ * `PEEK_HINGE_DROP` is how far below the cards' own bottom edge the hinge
+ * sits: further down is a wider, flatter fan.
+ */
+const PEEK_FAN_ANGLE = 0.28;
+const PEEK_HINGE_DROP = 0.026;
+/**
+ * How far apart the two leaves sit along their own normal.
+ *
+ * A fan of two is still two surfaces that cross near the hinge, and coplanar
+ * surfaces z-fight. One card is in front of the other, as it is in a real
+ * hand; a fraction of a millimetre is enough for the depth buffer and
+ * invisible to a person. Same fix as `HOLE_STACK_LIFT`, in the other pose.
+ */
+const PEEK_LEAF_GAP = 0.0018;
+
+/** Where a card is and how it is turned, part-way through being picked up. */
+export interface CardPose {
+  x: number;
+  y: number;
+  z: number;
+  /** Rotation about the card's own long axis. */
+  pitch: number;
+  /** Rotation in the plane of the card. Zero for anything not being fanned. */
+  roll: number;
+}
+
+/**
+ * A card's pose `peek` of the way into being lifted and fanned.
+ *
+ * `peek` runs 0 (lying where it belongs) to 1 (held up in front of the eye);
+ * `fan` is -1 for the left leaf of the pair and +1 for the right, 0 for a card
+ * that is not part of a hand. `restPitch` is what the card is doing when it is
+ * not being held - face up or face down - so the two poses blend rather than
+ * this file needing to know which.
+ *
+ * Pure trigonometry, no three.js: `TableCard.tsx` damps towards whatever this
+ * returns and owns nothing about the shape of the gesture.
+ */
+export function peekPose(
+  spot: CardSpot,
+  restPitch: number,
+  peek: number,
+  fan: number,
+): CardPose {
+  const pitch = restPitch + (PEEK_PITCH - restPitch) * peek;
+  // A positive roll is a turn about the card's own normal, which points back
+  // at the player - so it swings the card's top towards that player's *left*.
+  // The right-hand leaf therefore takes the negative one, or the pair would
+  // fan across itself instead of opening outwards.
+  const roll = -peek * fan * PEEK_FAN_ANGLE;
+
+  // The seat's outward direction: `spot.yaw` points the card's local +Z at the
+  // player, which is what everything below is measured against.
+  const outX = Math.sin(spot.yaw);
+  const outZ = Math.cos(spot.yaw);
+
+  // The fan, worked out in the card's own plane. The hinge sits below the
+  // pair, so swinging a card about it moves the card's centre by this much -
+  // which is what splays the tops without letting the bottoms come apart.
+  const arm = CARD_HEIGHT / 2 + PEEK_HINGE_DROP;
+  const alongX = -arm * Math.sin(roll);
+  const alongY = arm * (Math.cos(roll) - 1);
+
+  // The card's three axes at that pitch, in world terms.
+  const cosP = Math.cos(pitch);
+  const sinP = Math.sin(pitch);
+  // Local X: the seat's right, level with the felt whatever the pitch.
+  const rightX = Math.cos(spot.yaw);
+  const rightZ = -Math.sin(spot.yaw);
+  // Local Y: up the face of the card.
+  const upX = sinP * outX;
+  const upY = cosP;
+  const upZ = sinP * outZ;
+  // Local Z: out of the face. One leaf rides a fraction of a millimetre in
+  // front of the other along it.
+  const gap = peek * fan * PEEK_LEAF_GAP;
+  const faceX = cosP * outX;
+  const faceY = -sinP;
+  const faceZ = cosP * outZ;
+
+  // The bottoms come together as the tops go apart, which is the other half
+  // of a fan. At rest the pair is laid out `HOLE_PITCH` apart on the felt; a
+  // hand picked up gathers into one grip, so that offset is walked back to
+  // nothing over the lift and the two leaves end up hinging from the same
+  // place. Without this the cards splay from where they were lying and open
+  // into two separate cards on a table rather than one hand held in a hand.
+  const gather = -peek * fan * (HOLE_PITCH / 2);
+  const sideways = alongX + gather;
+
+  const draw = peek * PEEK_DRAW;
+  return {
+    x: spot.x + outX * draw + sideways * rightX + alongY * upX + gap * faceX,
+    y: spot.y + peek * PEEK_RISE + alongY * upY + gap * faceY,
+    z: spot.z + outZ * draw + sideways * rightZ + alongY * upZ + gap * faceZ,
+    pitch,
+    roll,
+  };
+}

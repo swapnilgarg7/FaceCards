@@ -6,14 +6,16 @@ import {
   CARD_THICKNESS,
   CARD_WIDTH,
   DECK_SIZE,
+  FACE_UP_PITCH,
   boardSpot,
   cardIndex,
   cardName,
   deckSpot,
   holeSpot,
   muckSpot,
+  peekPose,
 } from "./cards.js";
-import { TABLE, seatLayout } from "./layout.js";
+import { EYE_HEIGHT, SEAT_OUTSET, TABLE, seatLayout } from "./layout.js";
 
 describe("cardIndex", () => {
   it("round-trips every card in the deck exactly once", () => {
@@ -182,5 +184,115 @@ describe("muckSpot", () => {
       );
       expect(Math.hypot(muck.x, muck.z)).toBeGreaterThan(0.2);
     }
+  });
+});
+
+describe("peekPose", () => {
+  const ring = seatLayout(6);
+
+  it("leaves a card exactly where it lies when nothing is being held", () => {
+    for (const seat of ring) {
+      const spot = holeSpot(seat, 0);
+      const pose = peekPose(spot, FACE_UP_PITCH, 0, -1);
+      expect(pose.x).toBeCloseTo(spot.x, 10);
+      expect(pose.y).toBeCloseTo(spot.y, 10);
+      expect(pose.z).toBeCloseTo(spot.z, 10);
+      expect(pose.pitch).toBeCloseTo(FACE_UP_PITCH, 10);
+      expect(pose.roll).toBeCloseTo(0, 10);
+    }
+  });
+
+  it("brings the hand up into the frame instead of under the chin", () => {
+    // The bug this replaced: the old peek lifted 4cm and pulled the pair 4cm
+    // *towards* a player whose eye was already 40cm above it, which put the
+    // cards below the bottom of a level 55-degree lens. A hand held to be
+    // looked at has to end up in front of the eye, not under it.
+    const halfFov = (55 / 2) * (Math.PI / 180);
+    for (const seat of ring) {
+      for (const index of [0, 1]) {
+        const pose = peekPose(holeSpot(seat, index), FACE_UP_PITCH, 1, index * 2 - 1);
+        const eyeRadius = TABLE.radius + SEAT_OUTSET;
+        const held = Math.hypot(pose.x, pose.z);
+        // Still in front of the player rather than behind or beside them.
+        const inFront = eyeRadius - held;
+        expect(inFront).toBeGreaterThan(0.2);
+        // And inside a level lens: the angle down to the hand is less than
+        // half the vertical field of view.
+        const drop = EYE_HEIGHT - pose.y;
+        expect(drop).toBeGreaterThan(0);
+        expect(Math.atan2(drop, inFront)).toBeLessThan(halfFov);
+      }
+    }
+  });
+
+  it("turns the face of the card at the eye that is reading it", () => {
+    const seat = ring[0]!;
+    const pose = peekPose(holeSpot(seat, 0), FACE_UP_PITCH, 1, -1);
+    // The card's normal, from the same rotation the mesh is given.
+    const outX = Math.sin(seat.yaw);
+    const outZ = Math.cos(seat.yaw);
+    const normal = {
+      x: Math.cos(pose.pitch) * outX,
+      y: -Math.sin(pose.pitch),
+      z: Math.cos(pose.pitch) * outZ,
+    };
+    const eyeRadius = TABLE.radius + SEAT_OUTSET;
+    const toEye = {
+      x: outX * eyeRadius - pose.x,
+      y: EYE_HEIGHT - pose.y,
+      z: outZ * eyeRadius - pose.z,
+    };
+    const length = Math.hypot(toEye.x, toEye.y, toEye.z);
+    const cosine =
+      (normal.x * toEye.x + normal.y * toEye.y + normal.z * toEye.z) / length;
+    // Within about 12 degrees of square on, which is a hand being read.
+    expect(cosine).toBeGreaterThan(Math.cos((12 * Math.PI) / 180));
+  });
+
+  it("fans the pair open rather than sliding one card over the other", () => {
+    for (const seat of ring) {
+      const left = peekPose(holeSpot(seat, 0), FACE_UP_PITCH, 1, -1);
+      const right = peekPose(holeSpot(seat, 1), FACE_UP_PITCH, 1, 1);
+
+      // The two leaves lean opposite ways, which is the fan.
+      expect(left.roll).toBeGreaterThan(0);
+      expect(right.roll).toBeLessThan(0);
+      expect(left.roll).toBeCloseTo(-right.roll, 10);
+
+      // Their tops are further apart than their centres: they hinge from
+      // below rather than simply sliding sideways.
+      const centres = Math.hypot(left.x - right.x, left.y - right.y, left.z - right.z);
+      const along = CARD_HEIGHT / 2;
+      const topOf = (pose: typeof left, yaw: number) => ({
+        x: pose.x + along * (Math.sin(pose.pitch) * Math.sin(yaw) * Math.cos(pose.roll) - Math.cos(yaw) * Math.sin(pose.roll)),
+        y: pose.y + along * Math.cos(pose.pitch) * Math.cos(pose.roll),
+        z: pose.z + along * (Math.sin(pose.pitch) * Math.cos(yaw) * Math.cos(pose.roll) + Math.sin(yaw) * Math.sin(pose.roll)),
+      });
+      const lt = topOf(left, seat.yaw);
+      const rt = topOf(right, seat.yaw);
+      const tops = Math.hypot(lt.x - rt.x, lt.y - rt.y, lt.z - rt.z);
+      expect(tops).toBeGreaterThan(centres);
+
+      // Still one hand: the pair overlaps at the grip rather than becoming
+      // two cards standing separately on a table.
+      expect(centres).toBeLessThan(CARD_WIDTH);
+      // And one leaf is in front of the other by more than the paper is
+      // thick, which is what stops the overlap strobing.
+      const outward = {
+        x: Math.cos(left.pitch) * Math.sin(seat.yaw),
+        y: -Math.sin(left.pitch),
+        z: Math.cos(left.pitch) * Math.cos(seat.yaw),
+      };
+      const apart =
+        (right.x - left.x) * outward.x +
+        (right.y - left.y) * outward.y +
+        (right.z - left.z) * outward.z;
+      expect(Math.abs(apart)).toBeGreaterThan(CARD_THICKNESS);
+    }
+  });
+
+  it("does not fan a card that is not part of a hand", () => {
+    const pose = peekPose(holeSpot(ring[0]!, 0), FACE_UP_PITCH, 1, 0);
+    expect(pose.roll).toBeCloseTo(0, 10);
   });
 });

@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { TablePhase } from "@facecards/shared";
 import type { RoomSnapshot } from "../net/useRoom.js";
 import { cardAtlasTexture, cardPlaneGeometry } from "./cardAtlas.js";
-import { CARD_HEIGHT, CARD_WIDTH, cardIndex } from "./cards.js";
+import { cardIndex } from "./cards.js";
 import { damp } from "./damp.js";
 import {
   HOLO_CAPTION_ASPECT,
@@ -17,6 +17,7 @@ import {
   HoloCaption,
   holoCardX,
   holoFacing,
+  holoGlowGeometry,
 } from "./holo.js";
 
 /**
@@ -177,9 +178,12 @@ function HoloCard({ card, x, dim }: { card: string; x: number; dim: boolean }) {
         ref={glow}
         position={[x, HOLO_ROW_Y, -0.004]}
         scale={[HOLO_SCALE * 1.16, HOLO_SCALE * 1.12, 1]}
+        // Shared across every card in the row and kept for the life of the
+        // tab, like the atlas geometries: the wash is the same quad whatever
+        // card is behind it.
+        geometry={holoGlowGeometry()}
         renderOrder={9}
       >
-        <planeGeometry args={[CARD_WIDTH, CARD_HEIGHT]} />
         <primitive object={materials.glowMaterial} attach="material" />
       </mesh>
       <mesh

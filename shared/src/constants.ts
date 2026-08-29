@@ -18,9 +18,16 @@ export const ROOM_CODE_PATTERN = new RegExp(
   `^[${ROOM_CODE_ALPHABET}]{${ROOM_CODE_LENGTH}}$`,
 );
 
-/** Spec section 2: 2 to 6 players shipping, architecture ready for 10. */
+/**
+ * Spec section 2 ships 2 to 6 with the architecture ready for 10. The cap was
+ * raised to 8 on request: `seatLayout` is parametric and its tests already
+ * walked 2..MAX_SEATS_SUPPORTED, so the ring, the camera clamp and the seat
+ * spacing all held. What the ring does not decide is the media budget - see
+ * `client/src/scene/attention.ts`, where an 8-ring puts two more faces inside
+ * the medium cone at rest than a 6-ring does.
+ */
 export const MIN_PLAYERS = 2;
-export const MAX_PLAYERS = 6;
+export const MAX_PLAYERS = 8;
 export const MAX_SEATS_SUPPORTED = 10;
 
 /** Display-name limits, enforced server-side. Clients may not exceed these. */

@@ -2,7 +2,12 @@ import { useEffect, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { BACK_SLOT, cardGeometry, cardMaterial } from "./cardAtlas.js";
-import type { CardSpot } from "./cards.js";
+import {
+  FACE_DOWN_PITCH,
+  FACE_UP_PITCH,
+  peekPose,
+  type CardSpot,
+} from "./cards.js";
 import { arc, easeOutCubic, jitterSigned, progress } from "./tween.js";
 import { damp, dampAngle } from "./damp.js";
 
@@ -38,31 +43,6 @@ const MOVE_LAMBDA = 7;
 const TURN_LAMBDA = 9;
 /** The peek is a gesture under your hand, so it is the snappiest thing here. */
 const PEEK_LAMBDA = 14;
-
-/** Face down and face up, as a rotation about the card's own long axis. */
-const FACE_DOWN_PITCH = Math.PI / 2;
-const FACE_UP_PITCH = -Math.PI / 2;
-
-/** How far the near edge comes up on a peek, and how far the card slides back. */
-const PEEK_PITCH = -0.72;
-const PEEK_RISE = 0.045;
-const PEEK_DRAW = 0.045;
-
-/**
- * How a peeked pair opens in the hand.
- *
- * At rest the two cards overlap, which is what a hand lying on felt looks
- * like. Lifted, they must not: two cards tilted to the same angle, a
- * centimetre apart and still overlapping, are two nearly-coplanar quads with
- * the near one hiding a fifth of the far one - and the pip they hide is
- * usually the one you picked the cards up to read. Every real player does the
- * same thing here, which is to splay the pair open with a thumb, so the peek
- * spreads them apart and rolls each one out from the middle. It reads as a
- * hand being fanned and it puts clear air between the two surfaces.
- */
-const PEEK_SPREAD = 0.024;
-const PEEK_ROLL = 0.2;
-const PEEK_STAGGER = 0.006;
 
 export interface TableCardProps {
   /**
@@ -199,43 +179,20 @@ export function TableCard({
 
     p.peek = damp(p.peek, peek, PEEK_LAMBDA, delta);
 
-    // The peek pulls the card back towards the player and stands its near edge
-    // up: the whole gesture is that the face turns towards exactly one pair of
-    // eyes and nobody else's. It also fans the pair open, so the card in front
-    // stops covering the corner of the card behind it.
-    const drawBack = p.peek * PEEK_DRAW;
-    const spread = p.peek * peekFan * PEEK_SPREAD;
-    const outX = Math.sin(spot.yaw);
-    const outZ = Math.cos(spot.yaw);
-    // The seat's right, which is the axis the pair is already laid out along.
-    const rightX = Math.cos(spot.yaw);
-    const rightZ = -Math.sin(spot.yaw);
+    // Where the card belongs this frame, resting or held up. `cards.ts` owns
+    // that arithmetic, so the shape of the gesture can be reasoned about and
+    // tested without a renderer; this only chases what it returns.
+    const held = peekPose(spot, restPitch, p.peek, peekFan);
 
-    p.x = damp(p.x, spot.x + outX * drawBack + rightX * spread, MOVE_LAMBDA, delta);
-    p.z = damp(p.z, spot.z + outZ * drawBack + rightZ * spread, MOVE_LAMBDA, delta);
-    p.y = damp(
-      p.y,
-      // Stepped as well as spread: the far card of a fan sits a little higher
-      // than the near one, which is what stops the two faces sharing a plane
-      // at the top of the lift.
-      spot.y + p.peek * (PEEK_RISE + peekFan * PEEK_STAGGER),
-      MOVE_LAMBDA,
-      delta,
-    );
+    p.x = damp(p.x, held.x, MOVE_LAMBDA, delta);
+    p.y = damp(p.y, held.y, MOVE_LAMBDA, delta);
+    p.z = damp(p.z, held.z, MOVE_LAMBDA, delta);
     p.yaw = dampAngle(p.yaw, spot.yaw, TURN_LAMBDA, delta);
-
-    // Peeking overrides the resting face: the card is turned in the hand, so
-    // there is nothing to blend between.
-    const target =
-      p.peek > 0.001
-        ? restPitch + (PEEK_PITCH - restPitch) * p.peek
-        : restPitch;
-    p.pitch = dampAngle(p.pitch, target, TURN_LAMBDA, delta);
+    p.pitch = dampAngle(p.pitch, held.pitch, TURN_LAMBDA, delta);
 
     node.position.set(p.x, p.y, p.z);
-    // Roll is the last of the fan: each card of a lifted pair leans out from
-    // the middle, the way a hand splayed with a thumb does.
-    node.rotation.set(p.pitch, p.yaw, p.peek * peekFan * PEEK_ROLL);
+    // The roll is not damped: it is a function of the peek, which already is.
+    node.rotation.set(p.pitch, p.yaw, held.roll);
     node.visible = visible;
   });
 

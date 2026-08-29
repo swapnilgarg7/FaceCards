@@ -123,13 +123,15 @@ export function ShowdownOverlay({
   const spent = (card: string) => done && winningCards.size > 0 && !winningCards.has(card);
 
   return (
-    <div
-      className="showdown"
-      role="dialog"
-      aria-label="Showdown"
-      onClick={done ? undefined : skip}
-    >
-      <div className="showdown__panel">
+    <div className="showdown" role="dialog" aria-label="Showdown">
+      {/* The click target is the panel rather than the whole scrim, because
+          the scrim does not take the cursor at all - see `styles.css`. A
+          payout can sit there for a minute, and the mute button behind it has
+          to stay reachable for every second of that. */}
+      <div
+        className="showdown__panel"
+        onClick={done ? undefined : skip}
+      >
         <p className="showdown__eyebrow">
           {plan.showdown ? "Showdown" : "Hand over"}
         </p>

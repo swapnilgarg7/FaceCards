@@ -536,7 +536,9 @@ h2 {
 .settings {
   position: absolute;
   inset: 0;
-  z-index: 3;
+  /* Above everything, the showdown included: it is the way out of the room,
+     so nothing may ever be drawn over it. */
+  z-index: 40;
   display: grid;
   place-items: center;
   padding: 1.5rem;
@@ -1633,10 +1635,15 @@ h2 {
 .showdown {
   position: absolute;
   inset: 0;
-  z-index: 30;
+  z-index: 20;
   display: grid;
   place-items: center;
   padding: 2rem;
+  /* The scrim is a picture, not a lid. A payout can stay up for as long as
+     the table wants to talk about it, and somebody who has to mute or open
+     the menu in the middle of that must not have to wait for the next deal
+     to reach the button. Only the panel takes the cursor. */
+  pointer-events: none;
   /* Pooled, matching the pendant over the table, so the panel reads as
      something the room lit rather than a sheet dropped over it. */
   background: radial-gradient(
@@ -1658,6 +1665,7 @@ h2 {
 }
 
 .showdown__panel {
+  pointer-events: auto;
   display: flex;
   flex-direction: column;
   align-items: center;

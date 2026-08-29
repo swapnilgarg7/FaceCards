@@ -65,13 +65,19 @@ describe("seatLayout", () => {
   it("keeps the widest turn growing slowly with the table", () => {
     // The property that makes a ring the right shape: adding people costs a
     // little peripheral vision, never a face behind your shoulder.
+    // Bounds are pinned to seat counts, not to MAX_PLAYERS: the ring's shape
+    // is a property of how many people are on it, so raising the shipping cap
+    // should move which rung applies, never rewrite the ladder.
     expect(widestBearing(2)).toBeCloseTo(0);
     expect(widestBearing(3)).toBeLessThan(35);
     expect(widestBearing(4)).toBeLessThan(50);
-    expect(widestBearing(MAX_PLAYERS)).toBeLessThan(65);
+    expect(widestBearing(6)).toBeLessThan(65);
+    expect(widestBearing(8)).toBeLessThan(70);
     expect(widestBearing(MAX_SEATS_SUPPORTED)).toBeLessThan(
       COMFORTABLE_LOOK_ARC,
     );
+    // Whatever the cap currently is, a full table stays inside a head turn.
+    expect(widestBearing(MAX_PLAYERS)).toBeLessThan(COMFORTABLE_LOOK_ARC);
   });
 
   it("leaves every face reachable within the camera's yaw clamp", () => {
