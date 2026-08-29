@@ -129,7 +129,11 @@ Three things this turned out to depend on:
 - **Detection runs at 12 Hz, rendering at 60.** The smoothing interpolates the gaps. Detecting per frame would spend milliseconds to track motion nobody can perceive.
 - **Two coordinate systems in one result object.** MediaPipe's `boundingBox` is in pixels; its `keypoints` are normalised. Mixing them parks the crop in the top-left corner.
 
-Everything degrades to the fixed crop: model fails to load, GPU delegate unavailable, detector throws repeatedly, peer on an older build, peer's tracker silent for 2.5s. Tracking improves framing and is never required to see a face.
+Everything degrades to the fixed crop: model fails to load, GPU delegate unavailable, detector throws repeatedly, peer on an older build. Tracking improves framing and is never required to see a face.
+
+**A silent peer is not one of those cases, and assuming it was cost a session.** Browsers stop `requestAnimationFrame` and `requestVideoFrameCallback` in a tab that is not visible, so a player who switches tabs stops publishing within a frame or two. This is ordinary, not a failure. `faceBoxStore` therefore holds a peer's last framing for as long as they are in the room and never expires it; only `forget`, on disconnect, removes it. An earlier version timed out after 2.5s and fell back, which meant everyone watched that player's face snap off-centre a couple of seconds after they looked away and snap back when they returned. Falling back is a *downgrade*: the held box was measured against a real face, while the fixed crop is a guess that was never correct for anybody.
+
+The same throttling makes local two-tab testing actively misleading. Two tabs in one browser window means the unfocused one runs no detection at all, and the symptom — the other tab's avatar centring briefly, then drifting off and staying off — looks exactly like a tracking or smoothing bug. **Test with the two tabs on separate screens, or in separate windows, so both stay foregrounded.**
 
 **This required turning on `canPublishData` in the join token, which had been deliberately off.** The original reasoning was that game data must travel the authoritative Colyseus socket. That still holds and is unaffected: LiveKit datagrams go client to client through the SFU and never reach the game server, so nothing on that channel can move a chip, deal a card or claim a seat. The server is exactly as authoritative as before.
 

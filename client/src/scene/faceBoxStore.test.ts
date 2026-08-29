@@ -46,16 +46,17 @@ describe("faceBoxStore", () => {
     expect(store.get("a")).toEqual(box);
   });
 
-  it("expires a peer whose tracker has gone silent", () => {
-    // Not the same thing as seeing no face. Silence means no tracker at all,
-    // and the right answer is the fixed crop, not a frozen box from a minute
-    // ago that no longer describes where they are sitting.
+  it("holds the framing of a peer who has gone silent, rather than expiring it", () => {
+    // A browser stops rAF and rVFC in a tab that is not visible, so any player
+    // who switches tabs stops publishing immediately. Expiring here meant
+    // everyone watched their face snap off-centre a couple of seconds after
+    // they looked away. The held box was measured against a real face; the
+    // fixed crop it would fall back to is a guess that was never right for
+    // anyone, so falling back is a downgrade, and a visible one.
     const { store, advance } = storeWithClock();
     store.receive("a", box);
-    advance(1000);
+    advance(60 * 60 * 1000);
     expect(store.get("a")).toEqual(box);
-    advance(5000);
-    expect(store.get("a")).toBeNull();
   });
 
   it("tolerates a few dropped datagrams without falling back", () => {
@@ -67,11 +68,14 @@ describe("faceBoxStore", () => {
     expect(store.get("a")).toEqual(box);
   });
 
-  it("recovers after expiring, once the peer speaks again", () => {
+  it("picks straight back up when a silent peer starts publishing again", () => {
+    // Coming back from another tab. The framing they left is still on screen,
+    // so the new box eases in from there rather than snapping in from a
+    // fallback crop.
     const { store, advance } = storeWithClock();
     store.receive("a", box);
     advance(9000);
-    expect(store.get("a")).toBeNull();
+    expect(store.get("a")).toEqual(box);
     store.receive("a", moved);
     expect(store.get("a")).toEqual(moved);
   });

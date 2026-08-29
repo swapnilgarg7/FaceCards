@@ -37,20 +37,6 @@ export interface FaceBoxStore {
   clear(): void;
 }
 
-/**
- * How long a peer's last box stays usable without a refresh.
- *
- * A sender who is tracking transmits on a heartbeat whether or not it can see
- * a face, so silence for this long means the tracker itself is gone: the model
- * failed to load, the tab was throttled into the ground, or they are running a
- * build without tracking at all. Falling back to the fixed crop is right, and
- * holding a stale box forever is not.
- *
- * Comfortably more than the publish interval, because a lossy datagram channel
- * is allowed to drop a few in a row and that must not read as a failure.
- */
-const STALE_MS = 2500;
-
 interface Entry {
   box: FaceBox | null;
   at: number;
@@ -62,6 +48,28 @@ interface Entry {
 const RATE_WINDOW_MS = 1000;
 const RATE_SAMPLES = 24;
 
+/**
+ * A peer's last framing is held for as long as they are in the room, and is
+ * deliberately never expired.
+ *
+ * There was a timeout here once, on the reasoning that silence means the
+ * sender's tracker is gone and the fixed crop should take over. That reasoning
+ * is wrong, and it caused the bug it was meant to handle. Falling back is a
+ * *downgrade*: the held box was measured against a real face and was correct
+ * when it was sent, while the fixed crop is a guess that was never correct for
+ * anybody. Swapping a stale truth for a fresh guess makes the picture worse,
+ * and it does it as a visible jump.
+ *
+ * Silence is also completely ordinary. A browser throttles `requestAnimationFrame`
+ * and `requestVideoFrameCallback` to nothing in a tab that is not visible, so
+ * any player who switches tabs stops publishing within a frame or two. With a
+ * timeout, everyone else watched their face snap off-centre a couple of seconds
+ * after they looked away, and snap back when they returned. Holding means their
+ * avatar simply keeps the framing they left, which is also what it does when
+ * they lean out of shot.
+ *
+ * A peer who actually leaves is removed by `forget`, so nothing accumulates.
+ */
 export function createFaceBoxStore(
   now: () => number = () => performance.now(),
 ): FaceBoxStore {
@@ -69,17 +77,9 @@ export function createFaceBoxStore(
 
   return {
     get(peerId) {
-      const entry = entries.get(peerId);
-      if (!entry) return null;
-      if (now() - entry.at > STALE_MS) {
-        // Dropped rather than just reported stale. `forget` already covers the
-        // peer who left; this covers the one still in the room whose tracker
-        // died, so the map holds live trackers rather than every identity that
-        // has ever published.
-        entries.delete(peerId);
-        return null;
-      }
-      return entry.box;
+      // Null only when this peer has never sent a box at all, which is the one
+      // case where there is nothing better than the fixed crop to fall back to.
+      return entries.get(peerId)?.box ?? null;
     },
 
     stats() {
