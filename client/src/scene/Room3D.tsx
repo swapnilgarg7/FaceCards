@@ -6,7 +6,7 @@ import type { UseMedia } from "../media/useMedia.js";
 import type { SeatSnapshot } from "../net/useRoom.js";
 import { PokerTable } from "./PokerTable.js";
 import { SeatedCamera } from "./SeatedCamera.js";
-import { TABLE, seatLayout } from "./layout.js";
+import { assignSeats, seatLayout } from "./layout.js";
 
 /**
  * The room: table, lights, one avatar per remote player, and the local
@@ -30,8 +30,10 @@ export interface Room3DProps {
 function Lighting() {
   return (
     <>
-      {/* Enough ambient that an unlit face plane is never a silhouette. */}
-      <ambientLight intensity={0.55} color="#b9c6ff" />
+      {/* Even fill from every direction, so no seat is better lit than any
+          other. A single rim light would flatter whoever happened to sit in
+          front of it and silhouette whoever sat opposite. */}
+      <hemisphereLight args={["#b9c6ff", "#3a2a1e", 1.1]} />
 
       {/* The pooled light over the table the spec asks for. One shadow
           caster, small map: six avatars is well inside budget, and the
@@ -48,15 +50,6 @@ function Lighting() {
         shadow-mapSize={[1024, 1024]}
         shadow-bias={-0.0015}
       />
-
-      {/* Cool rim from behind the dealer gap, so heads separate from the
-          dark room instead of dissolving into it. */}
-      <pointLight
-        position={[0, 1.9, TABLE.radiusZ + 2.4]}
-        intensity={7}
-        distance={7}
-        color="#5b7cff"
-      />
     </>
   );
 }
@@ -68,8 +61,19 @@ export function Room3D({
   lookEnabled,
   sensitivity,
 }: Room3DProps) {
-  const seats = useMemo(() => seatLayout(), []);
-  const mySeat = seats[players.find((p) => p.sessionId === sessionId)?.seat ?? 0]!;
+  // Placement follows who is actually here, so two players sit opposite
+  // rather than taking the first two slots of a table built for six.
+  const placed = useMemo(
+    () => assignSeats(players.map((player) => player.seat)),
+    [players],
+  );
+
+  // Falls back to a lone seat for the frames between joining and the first
+  // state patch arriving, where the local player is not in the list yet.
+  const mySeatIndex = players.find((p) => p.sessionId === sessionId)?.seat;
+  const mySeat =
+    (mySeatIndex === undefined ? undefined : placed.get(mySeatIndex)) ??
+    seatLayout(1)[0]!;
 
   return (
     <Canvas
@@ -99,7 +103,7 @@ export function Room3D({
       {players
         .filter((player) => player.sessionId !== sessionId)
         .map((player) => {
-          const seat = seats[player.seat];
+          const seat = placed.get(player.seat);
           if (!seat) return null;
           return (
             <Avatar

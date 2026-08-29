@@ -1,5 +1,3 @@
-import { MAX_PLAYERS } from "@facecards/shared";
-
 /**
  * Table and seat geometry. Pure numbers and pure functions, no three.js import,
  * so the layout can be unit-tested without a renderer.
@@ -11,17 +9,25 @@ import { MAX_PLAYERS } from "@facecards/shared";
  * numbers can drift apart, every seat is looking slightly over everyone's head.
  */
 
-/** Metres. A real poker table is about 0.76 m tall, so this is life-size. */
+/**
+ * Metres. Round, not oval, and deliberately smaller than a real card-room
+ * table so faces read at conversational distance.
+ *
+ * Round is a sightline decision, not a styling one. On an ellipse, evenly
+ * spaced players are not evenly spaced *to each other*: three of them sit at
+ * 24 and 36 degrees rather than a matched 30, and whoever draws the short axis
+ * is closer to the felt than everyone else. On a circle every arrangement is a
+ * regular polygon, so nobody has a worse seat than anybody else.
+ */
 export const TABLE = {
-  radiusX: 1.3,
-  radiusZ: 0.92,
+  radius: 1.02,
   /** Top of the felt. */
   topY: 0.76,
   railTube: 0.08,
 } as const;
 
 /** How far a seated player sits back from the table edge. */
-export const SEAT_OUTSET = 0.28;
+export const SEAT_OUTSET = 0.26;
 
 /**
  * Seated eye height above the floor. Both the camera and the centre of every
@@ -33,25 +39,16 @@ export const EYE_HEIGHT = 1.17;
 const TAU = Math.PI * 2;
 
 /**
- * Seats occupy an arc, not the full ring.
- *
- * A true circle puts the widest seats far enough round that you have to turn
- * your whole body, and at higher seat counts it eventually puts someone behind
- * you. Leaving a gap on the dealer side fans everyone into a horseshoe, so
- * every face is inside a comfortable head-turn from every other seat.
+ * Where slot 0 sits. Every other slot is measured from here, so the first
+ * person at the table never moves as the room fills up around them.
  */
-export const SEAT_ARC_SPAN = (280 * Math.PI) / 180;
-
-/** Bearing of the gap in the horseshoe. The board and dealer live here. */
-export const DEALER_BEARING = Math.PI / 2;
+export const FIRST_SEAT_BEARING = 0;
 
 /**
- * How far the seated look can turn. Not arbitrary: at six seats the player
- * beside you is about 80 degrees off your resting forward, because that is
- * where a neighbour physically sits, and a view that cannot reach them cannot
- * hold a conversation with them. `layout.test.ts` asserts every seat stays
- * reachable inside this clamp, so shrinking it breaks a test rather than
- * quietly making someone unlookable-at.
+ * How far the seated look can turn. A ring keeps every face well inside this,
+ * but the clamp is what guarantees it: `layout.test.ts` asserts every seat is
+ * reachable, so shrinking this breaks a test rather than quietly making
+ * someone unlookable-at.
  */
 export const MAX_LOOK_YAW = (100 * Math.PI) / 180;
 
@@ -60,6 +57,7 @@ export const MAX_LOOK_PITCH_UP = (14 * Math.PI) / 180;
 export const MAX_LOOK_PITCH_DOWN = (50 * Math.PI) / 180;
 
 export interface Seat {
+  /** Ring slot, 0-based. Not the server's seat index; see `assignSeats`. */
   index: number;
   /** Floor position of the seat. */
   x: number;
@@ -71,25 +69,33 @@ export interface Seat {
 }
 
 /**
- * Fixed seats around the table.
+ * `count` players spread evenly around the whole table.
  *
- * Data-driven on purpose: the spec ships 2 to 6 but wants the architecture
- * ready for 10, and no scene code should have to change to get there. Seats
- * are laid out for the table's full capacity, not for who is currently in the
- * room, because a seat is fixed for the session (spec section 2) and must not
- * move under a player when someone else joins.
+ * Everyone faces the centre, so spreading evenly is also what puts faces in
+ * front of faces: two players land exactly opposite and meet head-on, three
+ * make an equilateral triangle, four a square. The widest turn anyone has to
+ * make works out at exactly `90 - 180/count` degrees, so it grows slowly and
+ * predictably: 0 at two players, 30 at three, 45 at four, 60 at six. A face
+ * plane is a flat quad, so it stays legible for as long as that number stays
+ * small. Crowding players onto part of the ring instead would push everyone
+ * into each other's periphery for no gain.
+ *
+ * The layout therefore depends on **how many people are actually here**, not
+ * on the table's capacity. Filling fixed slots of a six-seat table means the
+ * first two arrivals sit shoulder to shoulder staring at the felt, which is
+ * exactly the failure this replaced.
  */
-export function seatLayout(count: number = MAX_PLAYERS): Seat[] {
-  const gap = TAU - SEAT_ARC_SPAN;
-  const start = DEALER_BEARING + gap / 2;
-  const step = SEAT_ARC_SPAN / count;
+export function seatLayout(count: number): Seat[] {
+  if (count < 1) return [];
 
+  const step = TAU / count;
   const seats: Seat[] = [];
+
   for (let index = 0; index < count; index++) {
-    // Half-step in, so the fan is symmetric about the gap for any count.
-    const bearing = start + (index + 0.5) * step;
-    const x = (TABLE.radiusX + SEAT_OUTSET) * Math.cos(bearing);
-    const z = (TABLE.radiusZ + SEAT_OUTSET) * Math.sin(bearing);
+    const bearing = FIRST_SEAT_BEARING + index * step;
+    const seatRadius = TABLE.radius + SEAT_OUTSET;
+    const x = seatRadius * Math.cos(bearing);
+    const z = seatRadius * Math.sin(bearing);
 
     seats.push({
       index,
@@ -102,6 +108,31 @@ export function seatLayout(count: number = MAX_PLAYERS): Seat[] {
     });
   }
   return seats;
+}
+
+/**
+ * Server seat index -> where that player sits right now.
+ *
+ * The server owns seat *identity* (who holds a seat, and that they keep it for
+ * the session). This owns seat *placement*, which has to re-flow as the roster
+ * changes or a table of two is a table of two people sitting side by side.
+ *
+ * Ordering by seat index rather than by join time or map iteration order is
+ * what makes this agree across clients: every client is looking at the same
+ * player set, so every client must derive the same ring, or eye-lines meet
+ * nowhere. Lower seat indices take lower slots, so the player who was here
+ * first keeps slot 0 and does not move when the room grows.
+ */
+export function assignSeats(seatIndices: readonly number[]): Map<number, Seat> {
+  const ordered = [...new Set(seatIndices)].sort((a, b) => a - b);
+  const ring = seatLayout(ordered.length);
+
+  const placed = new Map<number, Seat>();
+  ordered.forEach((seatIndex, slot) => {
+    const seat = ring[slot];
+    if (seat) placed.set(seatIndex, seat);
+  });
+  return placed;
 }
 
 /** Unit forward vector (world XZ) for a seat, i.e. where that player looks. */

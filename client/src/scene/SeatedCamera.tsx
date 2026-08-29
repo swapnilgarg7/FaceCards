@@ -8,6 +8,7 @@ import {
   type Seat,
 } from "./layout.js";
 import { DEFAULT_SENSITIVITY, lookResponse } from "./lookCurve.js";
+import { dampAngle } from "./damp.js";
 
 /**
  * The seated first-person view.
@@ -31,6 +32,9 @@ import { DEFAULT_SENSITIVITY, lookResponse } from "./lookCurve.js";
 
 /** Bigger is snappier. Around 4 is "attentive person", 10 is "machine". */
 const LOOK_LAMBDA = 4.2;
+
+/** Matches the avatars', so everyone re-seats as one movement. */
+const RESEAT_LAMBDA = 3.4;
 
 const SWAY_YAW = 0.009;
 const SWAY_PITCH = 0.006;
@@ -64,6 +68,11 @@ export function SeatedCamera({
   // re-rendering the scene graph at that rate is the whole thing to avoid.
   const target = useRef({ yaw: 0, pitch: 0 });
   const current = useRef({ yaw: 0, pitch: 0 });
+
+  // Where the seat itself is, kept apart from the look and the sway so the
+  // idle bob never feeds back into the damping.
+  const base = useRef({ x: seat.x, z: seat.z, yaw: seat.yaw });
+  const seated = useRef(false);
 
   // Read inside the handler rather than closed over, so toggling the overlay
   // or dragging the slider does not tear down and re-add the listener.
@@ -102,6 +111,32 @@ export function SeatedCamera({
   useFrame((state, delta) => {
     const t = state.clock.elapsedTime;
 
+    // Ease to the seat when the table re-flows around a new arrival, rather
+    // than cutting, which at first person reads as being teleported.
+    if (!seated.current) {
+      base.current = { x: seat.x, z: seat.z, yaw: seat.yaw };
+      seated.current = true;
+    } else {
+      base.current.x = THREE.MathUtils.damp(
+        base.current.x,
+        seat.x,
+        RESEAT_LAMBDA,
+        delta,
+      );
+      base.current.z = THREE.MathUtils.damp(
+        base.current.z,
+        seat.z,
+        RESEAT_LAMBDA,
+        delta,
+      );
+      base.current.yaw = dampAngle(
+        base.current.yaw,
+        seat.yaw,
+        RESEAT_LAMBDA,
+        delta,
+      );
+    }
+
     current.current.yaw = THREE.MathUtils.damp(
       current.current.yaw,
       target.current.yaw,
@@ -121,14 +156,15 @@ export function SeatedCamera({
     const swayPitch = Math.sin(t * 0.23 + 1.1) * SWAY_PITCH;
     const bob = Math.sin(t * 0.19 + 2.3) * SWAY_BOB;
 
-    camera.position.set(seat.x, seat.eyeY + bob, seat.z);
+    camera.position.set(base.current.x, seat.eyeY + bob, base.current.z);
     camera.rotation.set(
       clamp(
         current.current.pitch + swayPitch,
         -MAX_LOOK_PITCH_DOWN,
         MAX_LOOK_PITCH_UP,
       ),
-      seat.yaw + clamp(current.current.yaw + swayYaw, -MAX_LOOK_YAW, MAX_LOOK_YAW),
+      base.current.yaw +
+        clamp(current.current.yaw + swayYaw, -MAX_LOOK_YAW, MAX_LOOK_YAW),
       0,
     );
   });

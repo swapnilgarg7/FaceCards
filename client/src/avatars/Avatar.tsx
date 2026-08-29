@@ -2,6 +2,7 @@ import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import type { Seat } from "../scene/layout.js";
+import { dampAngle } from "../scene/damp.js";
 import { useFaceTexture } from "./useFaceTexture.js";
 import {
   faceMaskTexture,
@@ -45,6 +46,13 @@ const FACE_PITCH = -0.07;
 const CHEST_Y = 0.98;
 const NAME_PLATE_Y = 0.86;
 const NAME_PLATE_HEIGHT = 0.075;
+
+/**
+ * How fast a player slides to a new seat when the table re-flows. Slow enough
+ * to read as everyone shuffling round to make room, fast enough not to be a
+ * thing you sit and wait for.
+ */
+const RESEAT_LAMBDA = 3.4;
 
 /** Distinguishes seats before anyone's camera is up. Phase 5 owns the art. */
 const SEAT_COLOURS = [
@@ -92,12 +100,45 @@ export function Avatar({
   const ringMask = speakingRingTexture();
   const plate = useMemo(() => namePlateTexture(displayName), [displayName]);
 
+  const rootRef = useRef<THREE.Group>(null);
   const torsoRef = useRef<THREE.Mesh>(null);
   const ringRef = useRef<THREE.MeshBasicMaterial>(null);
+  const seated = useRef(false);
   const phase = useMemo(() => seat.index * 1.7, [seat.index]);
 
   useFrame((state, delta) => {
     const t = state.clock.elapsedTime + phase;
+
+    // Seat placement is driven here rather than through JSX props, so a
+    // re-flow eases across the table instead of teleporting. The first frame
+    // snaps, because arriving should not look like sliding in from the floor.
+    const root = rootRef.current;
+    if (root) {
+      if (!seated.current) {
+        root.position.set(seat.x, 0, seat.z);
+        root.rotation.y = seat.yaw;
+        seated.current = true;
+      } else {
+        root.position.x = THREE.MathUtils.damp(
+          root.position.x,
+          seat.x,
+          RESEAT_LAMBDA,
+          delta,
+        );
+        root.position.z = THREE.MathUtils.damp(
+          root.position.z,
+          seat.z,
+          RESEAT_LAMBDA,
+          delta,
+        );
+        root.rotation.y = dampAngle(
+          root.rotation.y,
+          seat.yaw,
+          RESEAT_LAMBDA,
+          delta,
+        );
+      }
+    }
 
     // Breathing. Mutating the ref rather than setting state, because state
     // per frame would re-render every avatar sixty times a second.
@@ -123,7 +164,7 @@ export function Avatar({
   const showVideo = faceTexture !== null && !cameraOff;
 
   return (
-    <group position={[seat.x, 0, seat.z]} rotation-y={seat.yaw}>
+    <group ref={rootRef}>
       <mesh ref={torsoRef} position={[0, 0.8, 0]} castShadow>
         <capsuleGeometry args={[0.21, 0.36, 4, 12]} />
         <meshStandardMaterial color={colour} roughness={0.72} />
