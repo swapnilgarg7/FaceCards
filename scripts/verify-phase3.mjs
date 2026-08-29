@@ -87,11 +87,22 @@ function track(player) {
   return player;
 }
 
-/** Reconnect a client that was dropped, keeping it in `seats` in place. */
+/**
+ * Reconnect a client that was dropped, keeping its slot in `seats`.
+ *
+ * The slot matters more than it looks: a reconnected client is a *new* room
+ * object, and the old one is a dead socket whose decoded state is frozen at
+ * the moment it died. Anything still holding the old reference reads a
+ * snapshot of the past and cannot tell that from a table where nothing is
+ * happening - which is exactly how this script first "found" a server bug that
+ * was entirely its own.
+ */
 async function reconnectAs(player, token) {
+  const slot = seats.indexOf(player);
+  if (slot < 0) throw new Error(`${player.name} is not in the seat list`);
   const room = await new Client(WS).reconnect(token);
   const back = track({ name: player.name, room, seen: [], rejections: [] });
-  seats[seats.indexOf(player)] = back;
+  seats[slot] = back;
   return back;
 }
 
@@ -118,7 +129,9 @@ const erin = await seat("Erin");
 const frank = await seat("Frank");
 await sleep(600);
 
-const state = () => alice.room.state;
+// Read through the seat list, never through a captured client: `seats` is kept
+// pointing at live rooms across a reconnect, and a captured `alice` is not.
+const state = () => seats[0].room.state;
 const playerOf = (p) => p.room.state.players.get(p.room.sessionId);
 const seatOf = (p) => playerOf(p).seat;
 const onTheClock = () => seats.find((p) => state().actingSeat === seatOf(p));

@@ -71,6 +71,9 @@ ever received to assert that no opponent hole card, no deck stub and no burn
 card appeared in any of them before the showdown published them deliberately.
 
 `npm run verify:phase3` needs only `npm run dev`, and takes about a minute.
+It also carries the regression guard for the clock: a player who is *not* on
+the clock drops and reconnects, and the acting seat's remaining time must have
+gone down rather than up.
 Six headless clients fill a table; one of them has its socket closed without a
 leave message in the middle of a hand, and the script asserts that the table
 moved on inside the short clock, that the seat, the stack and *only that
@@ -198,11 +201,16 @@ Known boundaries left to later phases, on purpose:
   leave-and-rejoin a free rebuy. Fixing it properly means keying stacks to a
   stable identity, which is the same change phase 3 needs for reconnection.
 - No action timer: an idle player holds the hand open. Phase 3.
-- No rate limiting on room creation, room-code lookup or actions, and the room
-  code is ~29 bits. It is the only thing guarding a room, and a room is a live
-  webcam and voice call — see the security pass in phase 6.
-- Nothing enforces `wss:`/`https:` in production builds. Over plaintext the
-  per-client `StateView` buys nothing, so this gates any real deployment.
+- No rate limiting on room creation, room-code lookup, actions, sit-out flips
+  or media-token requests, and the room code is ~29 bits. `GET /api/rooms/:code`
+  is also an unthrottled existence oracle that queries every live room, and with
+  `autoDispose = false` unlimited room creation is a memory DoS. The code is the
+  only thing guarding a room, and a room is a live webcam and voice call — see
+  the security pass in phase 6.
+- Nothing enforces `wss:`/`https:` in production builds; `client/src/net/client.ts`
+  falls back to plaintext localhost when the env vars are unset, with no
+  production assert. Over plaintext the per-client `StateView` buys nothing, so
+  this gates any real deployment.
 
 (The mid-hand-disconnect boundary listed here through phase 2 is closed by
 phase 3's reconnection window, below.)
@@ -234,7 +242,10 @@ Verified by unit tests, `npm run typecheck`, and `npm run verify:phase3`
 - [x] **A closed laptop does not stall the table.** The action clock is
       server-side: thirty seconds for a player who is there, five for a chair
       nobody is in, and on timeout the server checks when checking is free and
-      folds only when staying in would cost chips
+      folds only when staying in would cost chips. It is a *deadline* computed
+      from when the decision started, not a countdown restarted by events, so
+      no sequence of drops and reconnects — by the acting player or by anyone
+      else at the table — can push it past the budget the decision began with
 - [x] Video scaling: `adaptiveStream` and simulcast as the baseline, plus
       explicit per-peer quality driven by camera yaw. At six players sitting
       still, one face is on the top layer and two are on the bottom
@@ -252,6 +263,10 @@ Known boundaries left to later phases, on purpose:
   seconds of a session (its own `minUptime`), so a laptop closed immediately
   after sitting down is a real leave.
 - No rebuy, so a table still stalls once someone busts.
+- **A reconnection token is a bearer credential for a seat.** Whoever holds one
+  can forcibly close the live client and take over the seat *and its hole-card
+  view*. The SDK keeps it in memory only; it must never be logged, persisted or
+  put in a URL.
 - An all-in seat whose player leaves for good still reaches the showdown in the
   engine but has no seat to publish it against, so its winnings leave with it.
 
