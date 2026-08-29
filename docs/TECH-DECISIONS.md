@@ -111,6 +111,38 @@ Gotchas, all of which will cost an afternoon if discovered late:
 
 Docs: https://docs.livekit.io/transport/media/subscribe/
 
+### Face framing: detect once on the sender, broadcast the box
+
+A fixed crop window cannot frame a face, because it does not know where the face is. It frames wherever the person happened to be sitting when the constants were tuned, and the result is an oval full of someone's wall with an ear in one corner.
+
+**MediaPipe `FaceDetector` with the BlazeFace short-range model**, run in the browser via `@mediapipe/tasks-vision`. Apache 2.0, fully local, ~230 KB model on top of an ~18 MB wasm runtime that is lazily imported and therefore not in the bundle anyone downloads to reach the lobby.
+
+Chosen over `FaceLandmarker` (fifteen times the model for 478 points, when the detector's six keypoints already include both eyes, which is all that framing needs), over the browser's own Shape Detection API (`FaceDetector` is absent or flagged across the browsers we target), and over `face-api.js` (unmaintained, larger, slower).
+
+**Each client detects only its own camera** and publishes the resulting box over a LiveKit data channel; every other client applies it. The alternative, detecting on each remote video, costs six detectors per machine instead of one and runs them on downscaled simulcast layers where accuracy is worst. Cost is O(1) per client rather than O(n). The price is that the box lags its video by one network hop, which is invisible under the smoothing the framing needs regardless.
+
+Three things this turned out to depend on:
+
+- **The smoothing is the feature, not the detection.** Raw boxes wobble a few pixels per frame on a motionless subject, and a crop window driven straight off them makes every face vibrate, which is worse than the fixed crop. `scene/faceSmooth.ts` holds a dead zone around the current framing and chases only the error beyond it: jitter moves nothing at all, and a real head turn still lands.
+- **Detection runs at 12 Hz, rendering at 60.** The smoothing interpolates the gaps. Detecting per frame would spend milliseconds to track motion nobody can perceive.
+- **Two coordinate systems in one result object.** MediaPipe's `boundingBox` is in pixels; its `keypoints` are normalised. Mixing them parks the crop in the top-left corner.
+
+Everything degrades to the fixed crop: model fails to load, GPU delegate unavailable, detector throws repeatedly, peer on an older build, peer's tracker silent for 2.5s. Tracking improves framing and is never required to see a face.
+
+**This required turning on `canPublishData` in the join token, which had been deliberately off.** The original reasoning was that game data must travel the authoritative Colyseus socket. That still holds and is unaffected: LiveKit datagrams go client to client through the SFU and never reach the game server, so nothing on that channel can move a chip, deal a card or claim a seat. The server is exactly as authoritative as before.
+
+What the flag genuinely bought was a one-line, token-enforced guarantee that *only* media crossed that channel, and LiveKit has no per-topic ACL to replace it with. So the guarantee moved into the client, in three places that have to be widened together and are therefore visible in review:
+
+- `DatagramTopic` in `client/src/media/MediaProvider.ts` is a closed union, so `sendData` will not compile with a new topic.
+- `isKnownTopic` in `LiveKitProvider` drops unknown topics at the boundary, before any listener sees them.
+- Inbound datagrams are rate limited per peer in `LiveKitProvider.handleData`, because a granted client can publish as fast as it likes and the SFU will fan it out to everyone.
+
+There is no SFU-side cap to pair with that last one, and the obvious-looking one is a trap worth recording. LiveKit's `limit.bytes_per_sec` is **node-level admission control across all traffic, media included**, not a per-participant data budget. Set it low enough to be meaningful for a data channel and it sits far below what a single 540p video stream uses, so the node declares itself over capacity and refuses every new connection with a 503 and `node has exceeded its configured limit`. It only trips once video actually flows, so the server starting cleanly proves nothing. LiveKit has no per-participant data rate setting; the client-side limit is the whole mitigation.
+
+The thing to guard on review is not the grant. It is a pull request that widens that union.
+
+One trap worth recording, because it cost a debugging cycle: with the grant off, `publishData` does not throw. The client sends, the SFU silently discards, every peer expires after 2.5s and everyone falls back to the fixed crop with nothing in the console. The channel failing completely and the channel working are indistinguishable from the sending side, which is why `LiveKitProvider.sendData` now logs the first failure per connection instead of swallowing all of them.
+
 ### Adaptive quality (spec sections 6 and 12)
 
 1. Publish with `simulcast: true` so the browser encodes multiple layers.

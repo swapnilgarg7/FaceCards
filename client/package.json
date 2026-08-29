@@ -4,7 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "predev": "node ../scripts/copy-mediapipe-wasm.mjs",
     "dev": "vite",
+    "prebuild": "node ../scripts/copy-mediapipe-wasm.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b"
@@ -12,6 +14,7 @@
   "dependencies": {
     "@colyseus/sdk": "0.17.43",
     "@facecards/shared": "*",
+    "@mediapipe/tasks-vision": "^1.0.1",
     "@react-three/drei": "^10.7.8",
     "@react-three/fiber": "^9.7.0",
     "livekit-client": "^2.22.0",

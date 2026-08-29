@@ -1,5 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MediaTokenPayload } from "@facecards/shared";
+import {
+  decodeFaceBox,
+  encodeFaceBox,
+  FACE_BOX_TOPIC,
+  type FaceBox,
+} from "../scene/faceBox.js";
+import {
+  createFaceBoxStore,
+  type FaceBoxStore,
+} from "../scene/faceBoxStore.js";
 import {
   createMediaProvider,
   type MediaConnectionState,
@@ -26,6 +36,13 @@ export interface UseMedia {
   remoteMicMuted: Set<string>;
   /** peerIds whose camera is off. Their face plane shows a placeholder. */
   remoteCameraOff: Set<string>;
+  /**
+   * Where each peer's face sits in their own frame. Not React state: it is
+   * written a dozen times a second per peer and read inside `useFrame`.
+   */
+  faceBoxes: FaceBoxStore;
+  /** Broadcast our own framing. Null means "tracking, no face right now". */
+  sendFaceBox(box: FaceBox | null): void;
   micMuted: boolean;
   cameraOff: boolean;
   audioBlocked: boolean;
@@ -50,6 +67,7 @@ export function useMedia(token: MediaTokenPayload | null): UseMedia {
   const [micMuted, setMicMuted] = useState(false);
   const [cameraOff, setCameraOff] = useState(false);
   const [audioBlocked, setAudioBlocked] = useState(false);
+  const faceBoxes = useMemo(() => createFaceBoxStore(), []);
 
   useEffect(() => {
     if (!token) return;
@@ -68,12 +86,25 @@ export function useMedia(token: MediaTokenPayload | null): UseMedia {
         setRemotes((prev) => new Map(prev).set(peerId, el));
       }),
       provider.onRemoteGone((peerId) => {
+        faceBoxes.forget(peerId);
         setRemotes((prev) => {
           if (!prev.has(peerId)) return prev;
           const next = new Map(prev);
           next.delete(peerId);
           return next;
         });
+      }),
+      provider.onData((peerId, topic, payload) => {
+        if (topic !== FACE_BOX_TOPIC) return;
+        const decoded = decodeFaceBox(payload);
+        // Dropped silently. A malformed datagram is a peer on a different
+        // build or a peer being clever, and in both cases the correct answer
+        // is that their avatar keeps the framing it already had.
+        if (decoded.kind === "invalid") return;
+        faceBoxes.receive(
+          peerId,
+          decoded.kind === "box" ? decoded.box : null,
+        );
       }),
       provider.onSpeaking((peerId, isSpeaking) => {
         setSpeaking((prev) => {
@@ -127,8 +158,9 @@ export function useMedia(token: MediaTokenPayload | null): UseMedia {
       setSpeaking(new Set());
       setRemoteMicMuted(new Set());
       setRemoteCameraOff(new Set());
+      faceBoxes.clear();
     };
-  }, [token]);
+  }, [token, faceBoxes]);
 
   const toggleMic = useCallback(async () => {
     const provider = providerRef.current;
@@ -152,6 +184,10 @@ export function useMedia(token: MediaTokenPayload | null): UseMedia {
     setAudioBlocked(false);
   }, []);
 
+  const sendFaceBox = useCallback((box: FaceBox | null) => {
+    providerRef.current?.sendData(FACE_BOX_TOPIC, encodeFaceBox(box));
+  }, []);
+
   return {
     state,
     error,
@@ -160,6 +196,8 @@ export function useMedia(token: MediaTokenPayload | null): UseMedia {
     speaking,
     remoteMicMuted,
     remoteCameraOff,
+    faceBoxes,
+    sendFaceBox,
     micMuted,
     cameraOff,
     audioBlocked,

@@ -194,6 +194,37 @@ h2 {
   width: 100%;
   backdrop-filter: blur(6px);
 }
+
+/* Dev-only face pipeline readout. Never present in a production build. */
+.facedebug {
+  position: fixed;
+  bottom: 0.9rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.45rem 0.7rem;
+  border-radius: 0.5rem;
+  background: rgb(8 10 14 / 78%);
+  backdrop-filter: blur(6px);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.7rem;
+  line-height: 1.35;
+  color: #c8d2e0;
+  white-space: nowrap;
+}
+.facedebug__row b {
+  color: #8aa2c4;
+  font-weight: 600;
+}
+/* The source resolution is the number this readout exists to surface. */
+.facedebug__warn {
+  color: #ffb84d;
+  font-weight: 700;
+}
 .hud__group {
   display: flex;
   gap: 0.5rem;

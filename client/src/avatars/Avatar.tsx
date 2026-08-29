@@ -3,6 +3,10 @@ import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import type { Seat } from "../scene/layout.js";
 import { dampAngle } from "../scene/damp.js";
+import type { FaceBox } from "../scene/faceBox.js";
+import type { FaceBoxStore } from "../scene/faceBoxStore.js";
+import { faceCrop } from "../scene/faceCrop.js";
+import { DEFAULT_SMOOTHING, stepFraming } from "../scene/faceSmooth.js";
 import { useFaceTexture } from "./useFaceTexture.js";
 import {
   faceMaskTexture,
@@ -27,12 +31,16 @@ export const FACE_PLANE_HEIGHT = 0.34;
 export const FACE_PLANE_ASPECT = FACE_PLANE_WIDTH / FACE_PLANE_HEIGHT;
 
 /**
- * Framing, tuned against a real face rather than derived. A raw webcam frame
- * is a head in the middle of a room; these two numbers are what turn it into
- * a face on a head.
+ * Fallback framing, for a peer whose face is not being tracked: their browser
+ * could not run the detector, or they are on an older build.
+ *
+ * A guess about where a face probably is, tuned against a real one rather than
+ * derived. Tighter than it used to be, because it now only ever runs when
+ * nothing better is available, and a crop that clips an ear is a better
+ * failure than one that frames a wall.
  */
-export const FACE_ZOOM = 0.78;
-export const FACE_Y_BIAS = 0.05;
+export const FACE_ZOOM = 0.62;
+export const FACE_Y_BIAS = 0.08;
 
 const HEAD_RADIUS = 0.14;
 /** How far the face plane floats off the head, so it never z-fights. */
@@ -71,8 +79,12 @@ const SEAT_COLOURS = [
 export interface AvatarProps {
   seat: Seat;
   displayName: string;
+  /** Whose face this is. The key into `faceBoxes`. */
+  peerId: string;
   /** Attached, playing element from the media provider, or null. */
   videoEl: HTMLVideoElement | null;
+  /** Framing measured on the sender's machine. Read, never written, here. */
+  faceBoxes: FaceBoxStore;
   mirror: boolean;
   speaking: boolean;
   micMuted: boolean;
@@ -82,18 +94,15 @@ export interface AvatarProps {
 export function Avatar({
   seat,
   displayName,
+  peerId,
   videoEl,
+  faceBoxes,
   mirror,
   speaking,
   micMuted,
   cameraOff,
 }: AvatarProps) {
-  const faceTexture = useFaceTexture(videoEl, {
-    planeAspect: FACE_PLANE_ASPECT,
-    mirror,
-    zoom: FACE_ZOOM,
-    yBias: FACE_Y_BIAS,
-  });
+  const faceTexture = useFaceTexture(videoEl);
 
   const colour = SEAT_COLOURS[seat.index % SEAT_COLOURS.length]!;
   const faceMask = faceMaskTexture();
@@ -105,6 +114,8 @@ export function Avatar({
   const ringRef = useRef<THREE.MeshBasicMaterial>(null);
   const seated = useRef(false);
   const phase = useMemo(() => seat.index * 1.7, [seat.index]);
+  /** The framing on screen, as opposed to the one last measured. */
+  const framing = useRef<FaceBox | null>(null);
 
   useFrame((state, delta) => {
     const t = state.clock.elapsedTime + phase;
@@ -146,6 +157,38 @@ export function Avatar({
     if (torso) {
       torso.scale.y = 1 + Math.sin(t * 0.9) * 0.012;
       torso.position.y = 0.8 + Math.sin(t * 0.9) * 0.004;
+    }
+
+    // Framing runs here rather than in an effect because it is animation: the
+    // tracker delivers a dozen measurements a second and this is what turns
+    // them into sixty frames of movement. Writing to the texture's own
+    // vectors, not to state, for the same reason the breathing above does.
+    if (faceTexture && videoEl) {
+      const measured = faceBoxes.get(peerId);
+      if (measured) {
+        // First box snaps. Easing in from a default would show every face
+        // sliding into position a second after they sat down.
+        framing.current = framing.current
+          ? stepFraming(framing.current, measured, DEFAULT_SMOOTHING, delta)
+          : measured;
+      } else {
+        framing.current = null;
+      }
+
+      const crop = faceCrop({
+        // Read off the element every frame rather than cached on a metadata
+        // event: a sender switching camera or simulcast layer changes these
+        // underneath us, and this costs two property reads.
+        videoWidth: videoEl.videoWidth,
+        videoHeight: videoEl.videoHeight,
+        planeAspect: FACE_PLANE_ASPECT,
+        zoom: FACE_ZOOM,
+        yBias: FACE_Y_BIAS,
+        mirror,
+        focus: framing.current,
+      });
+      faceTexture.repeat.set(crop.repeatX, crop.repeatY);
+      faceTexture.offset.set(crop.offsetX, crop.offsetY);
     }
 
     const ring = ringRef.current;

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { faceCrop, type CropOptions } from "./faceCrop.js";
+import { faceCrop, FOCUS_FACE_FILL, type CropOptions } from "./faceCrop.js";
+import type { FaceBox } from "./faceBox.js";
 
 const base: CropOptions = {
   videoWidth: 960,
@@ -102,5 +103,139 @@ describe("faceCrop", () => {
     expect(crop.repeatX).toBeCloseTo(1);
     expect(crop.repeatY).toBeLessThan(1);
     expectInsideSource(crop);
+  });
+});
+
+describe("faceCrop with a tracked face", () => {
+  /** Middle of the frame, a comfortable arm's length from the camera. */
+  const focus: FaceBox = { cx: 0.5, cy: 0.4, h: 0.3 };
+
+  /** Centre of the sampled window, back in image coordinates (y downward). */
+  function windowCentre(crop: ReturnType<typeof faceCrop>) {
+    return {
+      cx: crop.offsetX + crop.repeatX / 2,
+      cy: 1 - (crop.offsetY + crop.repeatY / 2),
+    };
+  }
+
+  it("centres the window on the face", () => {
+    const crop = faceCrop({ ...base, focus });
+    const centre = windowCentre(crop);
+    expect(centre.cx).toBeCloseTo(focus.cx);
+    expect(centre.cy).toBeCloseTo(focus.cy);
+    expectInsideSource(crop);
+  });
+
+  it("sizes the window so the face fills a known fraction of it", () => {
+    const crop = faceCrop({ ...base, focus });
+    // This is the framing decision made numeric: change FOCUS_FACE_FILL and
+    // this is the test that tells you what you changed.
+    expect(focus.h / crop.repeatY).toBeCloseTo(FOCUS_FACE_FILL);
+    expectInsideSource(crop);
+  });
+
+  it("keeps the plane's aspect in source pixels, like the fixed crop does", () => {
+    const crop = faceCrop({ ...base, focus });
+    const sampledAspect =
+      (crop.repeatX * base.videoWidth) / (crop.repeatY * base.videoHeight);
+    expect(sampledAspect).toBeCloseTo(base.planeAspect);
+  });
+
+  it("supersedes zoom and yBias rather than compounding with them", () => {
+    // Two guesses about where a face is do not average into a better guess.
+    const plain = faceCrop({ ...base, focus });
+    const fiddled = faceCrop({ ...base, focus, zoom: 0.3, yBias: 0.4 });
+    expect(fiddled).toEqual(plain);
+  });
+
+  it("follows the face up the frame", () => {
+    // A face nearer the top of the image must raise the window, which in UV
+    // terms means a *larger* offsetY. Getting this flip backwards is the
+    // classic version of this bug and it looks almost plausible on screen.
+    const high = faceCrop({ ...base, focus: { ...focus, cy: 0.2 } });
+    const low = faceCrop({ ...base, focus: { ...focus, cy: 0.7 } });
+    expect(high.offsetY).toBeGreaterThan(low.offsetY);
+    expectInsideSource(high);
+    expectInsideSource(low);
+  });
+
+  it("follows the face across the frame", () => {
+    const left = faceCrop({ ...base, focus: { ...focus, cx: 0.2 } });
+    const right = faceCrop({ ...base, focus: { ...focus, cx: 0.8 } });
+    expect(left.offsetX).toBeLessThan(right.offsetX);
+    expectInsideSource(left);
+    expectInsideSource(right);
+  });
+
+  it("zooms out as someone leans toward the camera", () => {
+    const far = faceCrop({ ...base, focus: { ...focus, h: 0.2 } });
+    const near = faceCrop({ ...base, focus: { ...focus, h: 0.55 } });
+    expect(near.repeatY).toBeGreaterThan(far.repeatY);
+    expectInsideSource(near);
+    expectInsideSource(far);
+  });
+
+  it("slides the window inside the frame rather than sampling off the edge", () => {
+    // Someone sitting hard against the left of the frame. The window cannot be
+    // centred on them without leaving the image, and leaving the image smears
+    // a column of edge pixels across their cheek.
+    for (const edge of [
+      { cx: 0, cy: 0.5 },
+      { cx: 1, cy: 0.5 },
+      { cx: 0.5, cy: 0 },
+      { cx: 0.5, cy: 1 },
+      { cx: 0, cy: 0 },
+      { cx: 1, cy: 1 },
+    ]) {
+      const crop = faceCrop({ ...base, focus: { ...focus, ...edge } });
+      expectInsideSource(crop);
+    }
+  });
+
+  it("caps the window at the whole frame for a very close face", () => {
+    const crop = faceCrop({ ...base, focus: { ...focus, h: 1 } });
+    expect(crop.repeatY).toBeLessThanOrEqual(1);
+    expectInsideSource(crop);
+  });
+
+  it("does not magnify a tiny detection into a blur", () => {
+    // A far-away face on a wide-angle laptop camera. Following it literally
+    // would stretch a handful of pixels across the whole plane.
+    const crop = faceCrop({ ...base, focus: { ...focus, h: 0.05 } });
+    expect(crop.repeatY).toBeGreaterThan(0.05 / FOCUS_FACE_FILL);
+    expectInsideSource(crop);
+  });
+
+  it("mirrors without moving the framing", () => {
+    // The box is measured on the raw frame, and mirroring is a property of who
+    // is looking. If this ever fails, self-view and everyone else disagree
+    // about which way a head is turned.
+    const plain = faceCrop({ ...base, focus });
+    const mirrored = faceCrop({ ...base, focus, mirror: true });
+
+    expect(mirrored.repeatX).toBeCloseTo(-plain.repeatX);
+    expect(mirrored.offsetX).toBeCloseTo(plain.offsetX + plain.repeatX);
+    expect(mirrored.offsetX + mirrored.repeatX).toBeCloseTo(plain.offsetX);
+    expect(mirrored.repeatY).toBeCloseTo(plain.repeatY);
+    expect(mirrored.offsetY).toBeCloseTo(plain.offsetY);
+    expectInsideSource(mirrored);
+  });
+
+  it("stays inside the frame for a portrait source", () => {
+    const crop = faceCrop({
+      ...base,
+      videoWidth: 480,
+      videoHeight: 960,
+      focus: { cx: 0.5, cy: 0.3, h: 0.5 },
+    });
+    expect(crop.repeatX).toBeLessThanOrEqual(1 + 1e-9);
+    expectInsideSource(crop);
+    // Still the plane's aspect after the width-limited rescale.
+    const sampledAspect = (crop.repeatX * 480) / (crop.repeatY * 960);
+    expect(sampledAspect).toBeCloseTo(base.planeAspect);
+  });
+
+  it("falls back to the fixed crop when there is no focus", () => {
+    expect(faceCrop({ ...base, focus: null })).toEqual(faceCrop(base));
   });
 });

@@ -42,6 +42,31 @@ export interface PublishOptions {
 /** Unsubscribe handle. Every `on*` returns one; call it on teardown. */
 export type Unsubscribe = () => void;
 
+/**
+ * A datagram payload. Explicitly backed by a plain `ArrayBuffer` rather than
+ * any `ArrayBufferLike`: a view onto a `SharedArrayBuffer` cannot be handed to
+ * a transport, and finding that out at the call site is better than finding it
+ * out inside a vendor SDK.
+ */
+export type Datagram = Uint8Array<ArrayBuffer>;
+
+/**
+ * Every kind of datagram allowed to cross the media channel. A closed union,
+ * on purpose.
+ *
+ * The join token grants `canPublishData`, so at the transport level this is an
+ * open client-to-client byte channel that bypasses the authoritative server
+ * entirely, and LiveKit has no per-topic access control to narrow it with.
+ * This type is the narrowing. Adding a second topic is then a deliberate edit
+ * to a shared type with a comment pointing at the rule, not a one-line
+ * temptation in a feature branch at midnight.
+ *
+ * **Nothing that decides anything may be added here.** Chips, cards, bets,
+ * seats, turn order and every other outcome stay on the Colyseus socket, where
+ * the server owns them and a client can only ask.
+ */
+export type DatagramTopic = "facebox";
+
 export interface MediaProvider {
   connect(credentials: MediaCredentials): Promise<void>;
   disconnect(): Promise<void>;
@@ -85,6 +110,28 @@ export interface MediaProvider {
    */
   onRemoteMute(
     cb: (peerId: string, kind: TrackKind, muted: boolean) => void,
+  ): Unsubscribe;
+
+  /**
+   * Fire-and-forget datagrams between clients, lossy and unordered.
+   *
+   * **These do not touch the game server, so nothing that decides anything may
+   * travel on them.** They carry presentation state only: right now, where a
+   * peer's face sits inside their own camera frame. Chips, cards, bets, seats
+   * and every other outcome stay on the authoritative socket, where the server
+   * owns them and a client can only ask.
+   *
+   * A receiver treats every payload as hostile input and validates it before
+   * use, because on this channel there is no server in the middle to have done
+   * that already.
+   *
+   * Lossy on purpose: this is a stream of positions where the next one is
+   * along in under a tenth of a second, so a retransmitted stale box is worth
+   * less than the bandwidth it costs.
+   */
+  sendData(topic: DatagramTopic, payload: Datagram): void;
+  onData(
+    cb: (peerId: string, topic: DatagramTopic, payload: Uint8Array) => void,
   ): Unsubscribe;
 
   onConnectionState(cb: (state: MediaConnectionState) => void): Unsubscribe;

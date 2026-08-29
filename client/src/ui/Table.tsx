@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { MAX_PLAYERS } from "@facecards/shared";
+import { useFaceTracking } from "../avatars/useFaceTracking.js";
 import type { UseMedia } from "../media/useMedia.js";
 import type { RoomSnapshot } from "../net/useRoom.js";
 import { Room3D } from "../scene/Room3D.js";
+import { FaceDebug } from "./FaceDebug.js";
 import { SettingsPanel, loadSensitivity } from "./SettingsPanel.js";
 import { VideoTile } from "./VideoTile.js";
 
@@ -31,6 +33,12 @@ export function Table({
   const shareUrl = `${window.location.origin}/?room=${snapshot.code}`;
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sensitivity, setSensitivity] = useState(loadSensitivity);
+
+  // Find our own face and tell the room where it is, so that the avatar
+  // everyone else is looking at frames it properly. Nothing on this screen
+  // shows the result: it is entirely for other people's benefit, which is also
+  // why it is here rather than buried in the scene that never renders us.
+  const tracking = useFaceTracking(media.localVideo, media.sendFaceBox);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -117,6 +125,13 @@ export function Table({
           {snapshot.lastBumpBy && ` · ${snapshot.lastBumpBy}`}
         </span>
       </footer>
+
+      {/* Dev only. `import.meta.env.DEV` is substituted with `false` at build
+          time, so this cannot render in production. The component itself is
+          not tree-shaken out of the bundle - about a kilobyte of dead code
+          that never executes - which is a fair price for the afternoon it
+          saves the next time framing looks wrong. */}
+      {import.meta.env.DEV && <FaceDebug media={media} tracking={tracking} />}
 
       {settingsOpen && (
         <SettingsPanel

@@ -9,3 +9,7 @@ coverage/
 docker/livekit/*.local.yaml
 dist-types/
 *.d.ts.map
+
+# Staged from node_modules by scripts/copy-mediapipe-wasm.mjs on dev/build.
+# The .tflite model beside it is committed: that one is not in any package.
+client/public/mediapipe/wasm/

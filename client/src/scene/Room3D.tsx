@@ -110,7 +110,13 @@ export function Room3D({
               key={player.sessionId}
               seat={seat}
               displayName={player.displayName}
+              peerId={player.sessionId}
               videoEl={media.remotes.get(player.sessionId) ?? null}
+              // Their machine measured where their face is and sent it. This
+              // client never runs detection on a remote video: six detectors
+              // per tab is the cost, and a downscaled simulcast layer is the
+              // worst possible input to give one.
+              faceBoxes={media.faceBoxes}
               // Only your own image mirrors. Mirroring someone else's face
               // puts their wedding ring on the wrong hand.
               mirror={false}

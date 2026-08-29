@@ -18,6 +18,20 @@ rtc:
   # skipping it removes a startup network round trip.
   use_external_ip: false
 
+# Deliberately no `limit:` block here.
+#
+# It looks like the place to cap the data channel that face framing rides on
+# (see server/src/livekit/token.ts), and it is not: `limit.bytes_per_sec` is
+# node-level admission control covering *all* traffic, media included. Setting
+# it to anything a data channel would need is far below what one 540p video
+# stream uses, so the node immediately reports itself over capacity and refuses
+# every new connection with a 503 and "node has exceeded its configured limit".
+# It only fails once video actually flows, so a server that starts cleanly
+# proves nothing.
+#
+# LiveKit has no per-participant data rate setting. The rate limit that matters
+# lives on the receiving client, in LiveKitProvider.handleData.
+
 keys:
   devkey: devsecretdevsecretdevsecretdevsecret
 

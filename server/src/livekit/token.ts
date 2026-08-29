@@ -33,9 +33,27 @@ export interface MintOptions {
  *
  * Grants are deliberately narrow: join, publish and subscribe inside this one
  * room. No `roomCreate`, no `roomAdmin`, no `roomList`, so a leaked token is
- * worth one seat at one table and nothing else. `canPublishData` stays off:
- * game data travels the authoritative Colyseus socket, never the media
- * channel, or the server stops being the only source of truth.
+ * worth one seat at one table and nothing else.
+ *
+ * `canPublishData` is on, and it is the one grant here that deserves an
+ * argument rather than a line. It carries where each player's face sits inside
+ * their own camera frame, twelve times a second, so that the avatar everyone
+ * else is looking at frames a face instead of a wall. That is presentation,
+ * not game state.
+ *
+ * The rule it appears to bend is `CLAUDE.md`'s "the server is authoritative",
+ * and it does not: LiveKit datagrams travel client to client through the SFU
+ * and never reach this server, so nothing on that channel can move a chip,
+ * deal a card or claim a seat. The server is exactly as authoritative with
+ * this on as with it off. What it costs is that "only media crosses the media
+ * channel" stops being enforced by a boolean here and becomes an invariant the
+ * client has to keep. It keeps it two ways: `DatagramTopic` in
+ * `client/src/media/MediaProvider.ts` is a closed union, so adding a second
+ * kind of datagram is a deliberate type change rather than a one-line
+ * temptation, and the receiving end drops every topic it does not know.
+ *
+ * The thing to guard on review is not this flag. It is any future pull request
+ * that widens that union.
  */
 export async function mintMediaToken(
   opts: MintOptions,
@@ -64,7 +82,8 @@ export async function mintMediaToken(
       room,
       canPublish: true,
       canSubscribe: true,
-      canPublishData: false,
+      // Face framing only. See the note above before widening what rides here.
+      canPublishData: true,
     });
 
     return {

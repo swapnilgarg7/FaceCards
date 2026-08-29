@@ -61,9 +61,25 @@ describe("mintMediaToken", () => {
     for (const admin of ["roomCreate", "roomList", "roomAdmin", "roomRecord"]) {
       expect(video[admin]).toBeFalsy();
     }
-    // Game data travels the authoritative socket. If the media channel could
-    // carry it, the server would stop being the only source of truth.
-    expect(video["canPublishData"]).toBe(false);
+  });
+
+  it("allows data publishing, for face framing and nothing else", async () => {
+    const result = await mintMediaToken({
+      roomCode: "ABC234",
+      identity: "session-xyz",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const video = payloadOf(result.token)["video"] as Record<string, unknown>;
+    // Carries where a player's face sits in their own camera frame. This is
+    // presentation, not game state: LiveKit datagrams go client to client and
+    // never reach this server, so nothing here can move a chip or deal a card.
+    //
+    // The check that actually matters is not this line, it is `DatagramTopic`
+    // in client/src/media/MediaProvider.ts staying a closed union. If a review
+    // ever widens that, this grant is what makes it dangerous.
+    expect(video["canPublishData"]).toBe(true);
   });
 
   it("never puts the API secret in the token", async () => {

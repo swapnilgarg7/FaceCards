@@ -6,12 +6,15 @@ import {
   VideoPresets,
   VideoQuality,
   type Participant,
+  type RoomEventCallbacks,
   type RemoteParticipant,
   type RemoteTrack,
   type RemoteTrackPublication,
   type TrackPublication,
 } from "livekit-client";
 import type {
+  Datagram,
+  DatagramTopic,
   MediaConnectionState,
   MediaCredentials,
   MediaProvider,
@@ -30,6 +33,24 @@ import type {
  * gets no video at all. Hidden is fine; absent is not.
  */
 
+/**
+ * Size of the hidden elements remote video is attached to.
+ *
+ * This is not cosmetic, and it is not arbitrary. `adaptiveStream` chooses which
+ * simulcast layer to pull by measuring these elements, so their size is the
+ * only thing deciding how much resolution an avatar's face gets. At the old
+ * 320x180 every remote face arrived as the 180p layer, and since the face crop
+ * samples roughly a quarter of the frame and stretches it across the plane,
+ * that left about 66x87 real pixels to magnify. That is the blur, and tracked
+ * framing made it worse by cropping tighter than the old fixed zoom did.
+ *
+ * Matched to the capture resolution so the top layer is requested. The face
+ * plane renders around 250px tall, and the crop keeps roughly half the frame
+ * height, so anything below 540 is being upscaled before it is even drawn.
+ */
+const SINK_WIDTH = 960;
+const SINK_HEIGHT = 540;
+
 /** Off-screen but laid out, not `display:none`, and not zero-size. */
 function ensureMediaSink(): HTMLElement {
   const existing = document.getElementById("facecards-media-sink");
@@ -41,14 +62,29 @@ function ensureMediaSink(): HTMLElement {
   sink.style.position = "fixed";
   sink.style.top = "0";
   sink.style.left = "0";
-  sink.style.width = "320px";
-  sink.style.height = "180px";
+  sink.style.width = `${SINK_WIDTH}px`;
+  sink.style.height = `${SINK_HEIGHT}px`;
+  // Zero opacity, not `visibility: hidden` or `display: none`: those last two
+  // read as invisible to the intersection observer behind adaptiveStream,
+  // which then stops the track entirely rather than downgrading it.
   sink.style.opacity = "0";
   sink.style.pointerEvents = "none";
   sink.style.zIndex = "-1";
   sink.style.overflow = "hidden";
   document.body.appendChild(sink);
   return sink;
+}
+
+/**
+ * Floor on the gap between two accepted datagrams from one peer, in ms. Three
+ * times the intended publish interval of ~83 ms, so a peer that bursts or
+ * whose timer drifts is never penalised, and one that floods is.
+ */
+const MIN_DATAGRAM_INTERVAL_MS = 28;
+
+/** The receive-side half of `DatagramTopic`. Both must be widened together. */
+function isKnownTopic(topic: string | undefined): topic is DatagramTopic {
+  return topic === "facebox";
 }
 
 type Emitter<Args extends unknown[]> = Set<(...args: Args) => void>;
@@ -89,8 +125,17 @@ export class LiveKitProvider implements MediaProvider {
     new Set();
   private readonly stateListeners: Emitter<[MediaConnectionState]> = new Set();
   private readonly audioBlockedListeners: Emitter<[boolean]> = new Set();
+  private readonly dataListeners: Emitter<
+    [string, DatagramTopic, Uint8Array]
+  > = new Set();
+
+  /** peerId -> when we last accepted a datagram from them. Rate limiting. */
+  private readonly lastDatagramAt = new Map<string, number>();
 
   private speakingNow = new Set<string>();
+
+  /** So a rejected datagram channel is reported once rather than never. */
+  private dataFailureLogged = false;
 
   /** peerId -> currently muted kinds, so a late subscriber can be replayed. */
   private readonly mutedNow = new Map<string, Set<TrackKind>>();
@@ -197,6 +242,38 @@ export class LiveKitProvider implements MediaProvider {
     return subscribe(this.muteListeners, cb);
   }
 
+  sendData(topic: DatagramTopic, payload: Datagram): void {
+    const room = this.room;
+    // Not an error to call this before connecting or after leaving: the
+    // tracker publishes on a timer that does not know about room lifecycle.
+    if (!room || room.state !== ConnectionState.Connected) return;
+
+    void room.localParticipant
+      .publishData(payload, { reliable: false, topic })
+      .catch((err: unknown) => {
+        // Once, not every time. This fires a dozen times a second, so logging
+        // each failure buries the console - but swallowing all of them hides
+        // the difference between "a lossy packet was lost", which is this
+        // channel working as designed, and "every packet is being rejected",
+        // which looks identical from here and is not.
+        if (this.dataFailureLogged) return;
+        this.dataFailureLogged = true;
+        console.error(
+          `[media] datagram publish failed on topic "${topic}", and will be ` +
+            "reported once. If this is a permissions error, the join token " +
+            "is missing the data-publish grant and *no* datagram is reaching " +
+            "anyone:",
+          err,
+        );
+      });
+  }
+
+  onData(
+    cb: (peerId: string, topic: DatagramTopic, payload: Uint8Array) => void,
+  ): Unsubscribe {
+    return subscribe(this.dataListeners, cb);
+  }
+
   onConnectionState(cb: (state: MediaConnectionState) => void): Unsubscribe {
     return subscribe(this.stateListeners, cb);
   }
@@ -241,8 +318,49 @@ export class LiveKitProvider implements MediaProvider {
       .on(RoomEvent.TrackMuted, this.handleTrackMuted)
       .on(RoomEvent.TrackUnmuted, this.handleTrackUnmuted)
       .on(RoomEvent.ConnectionStateChanged, this.handleConnectionState)
-      .on(RoomEvent.AudioPlaybackStatusChanged, this.handleAudioPlayback);
+      .on(RoomEvent.AudioPlaybackStatusChanged, this.handleAudioPlayback)
+      .on(RoomEvent.DataReceived, this.handleData);
   }
+
+  /**
+   * Typed against the SDK's own callback signature rather than a hand-written
+   * one. These are positional arguments: a narrower local signature is
+   * structurally assignable, so an SDK upgrade that reorders them would leave
+   * `topic` silently undefined, drop every packet at the guard below, and
+   * break face tracking with nothing in the console. This way it is a compile
+   * error instead.
+   */
+  private readonly handleData: RoomEventCallbacks["dataReceived"] = (
+    payload,
+    participant,
+    _kind,
+    topic,
+  ): void => {
+    // A packet with no participant came from the server API rather than a
+    // peer, and this channel is defined as peer-to-peer presentation state.
+    // Nothing upstream should be sending on it; if something starts, it does
+    // not get to impersonate a player.
+    if (!participant) return;
+
+    // Allow-listed at the boundary, not by the listeners. The join token
+    // grants blanket data-publish permission because LiveKit has no per-topic
+    // ACL, so this is where an unexpected topic stops: anything a peer invents
+    // from devtools is dropped here rather than fanned out to whatever happens
+    // to be subscribed.
+    if (!isKnownTopic(topic)) return;
+
+    // Rate limited per peer. A hostile client can publish as fast as it likes
+    // and the SFU will fan it out to everyone, so without this one peer can
+    // spend every other client's main thread on decodes. The intended rate is
+    // twelve a second; this caps well above that so ordinary bursts and
+    // clock jitter pass untouched.
+    const now = performance.now();
+    const last = this.lastDatagramAt.get(participant.identity) ?? 0;
+    if (now - last < MIN_DATAGRAM_INTERVAL_MS) return;
+    this.lastDatagramAt.set(participant.identity, now);
+
+    emit(this.dataListeners, participant.identity, topic, payload);
+  };
 
   private readonly handleTrackSubscribed = (
     track: RemoteTrack,
@@ -260,6 +378,13 @@ export class LiveKitProvider implements MediaProvider {
       // documents that autoplay depends on them.
       el.muted = true;
       el.playsInline = true;
+      // Sized explicitly, because adaptiveStream measures the *element*, not
+      // its container, and an unstyled <video> reports the CSS default of
+      // 300x150 however large the sink around it is. Leaving this off is the
+      // same bug as an undersized sink: the top simulcast layer is published
+      // and never requested.
+      el.style.width = `${SINK_WIDTH}px`;
+      el.style.height = `${SINK_HEIGHT}px`;
       ensureMediaSink().appendChild(el);
 
       this.remoteVideoEls.get(peerId)?.remove();
@@ -316,6 +441,7 @@ export class LiveKitProvider implements MediaProvider {
       audio.remove();
       this.remoteAudioEls.delete(peerId);
     }
+    this.lastDatagramAt.delete(peerId);
     if (this.speakingNow.delete(peerId)) {
       emit(this.speakingListeners, peerId, false);
     }

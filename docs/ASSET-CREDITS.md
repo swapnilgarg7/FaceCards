@@ -28,6 +28,19 @@ License policy: free for commercial use, no purchase. CC0 preferred. CC-BY allow
 | --- | --- | --- |
 | _(none yet)_ | | |
 
+## ML models & runtimes
+
+Not art, but shipped to the client and therefore held to the same rule.
+
+| Asset | File in repo | Source URL | Author | License | Attribution required |
+| --- | --- | --- | --- | --- | --- |
+| BlazeFace (short range) face detector | `client/public/mediapipe/blaze_face_short_range.tflite` | https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite | Google / MediaPipe | Apache-2.0 | No |
+| MediaPipe Tasks Vision wasm runtime | _not committed_ — staged from `@mediapipe/tasks-vision` into `client/public/mediapipe/wasm/` by `scripts/copy-mediapipe-wasm.mjs` | https://www.npmjs.com/package/@mediapipe/tasks-vision | Google / MediaPipe | Apache-2.0 | No |
+
+The model is committed because it is not distributed in any npm package and a build that fetches it from Google's CDN at runtime breaks when that URL moves. The 18 MB wasm runtime is not committed: it is versioned with the npm package and re-staged on every dev start and build, so it cannot drift behind an `npm update`.
+
+Apache-2.0 requires the license text and notice to be preserved with redistribution, which the shipped `.tflite` and wasm carry from upstream. No in-app attribution line is required, and no rows in the CC-BY notice below.
+
 ## Attribution notice (shipped in-app)
 
 Any CC-BY asset above must have its attribution string reproduced verbatim in the in-app credits panel. Keep this section and that panel in sync.
