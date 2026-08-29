@@ -1,4 +1,5 @@
 import {
+  AudioPresets,
   ConnectionState,
   Room,
   RoomEvent,
@@ -34,22 +35,41 @@ import type {
  */
 
 /**
+ * The top of the simulcast ladder: capture resolution, and the most a single
+ * face can ever cost.
+ *
+ * Named once because three things have to agree about it and drift silently if
+ * they do not - what the camera captures, what the top rung of
+ * `videoSimulcastLayers` is, and how big the sink elements are. An h540
+ * capture behind a 640x360 sink is not a saving; it is an encode nobody
+ * subscribes to, which `dynacast` eventually turns off and pays for until it
+ * does.
+ */
+const CAPTURE = VideoPresets.h360;
+
+/**
  * Size of the hidden elements remote video is attached to.
  *
  * This is not cosmetic, and it is not arbitrary. `adaptiveStream` chooses which
  * simulcast layer to pull by measuring these elements, so their size is the
- * only thing deciding how much resolution an avatar's face gets. At the old
- * 320x180 every remote face arrived as the 180p layer, and since the face crop
- * samples roughly a quarter of the frame and stretches it across the plane,
- * that left about 66x87 real pixels to magnify. That is the blur, and tracked
- * framing made it worse by cropping tighter than the old fixed zoom did.
+ * only thing deciding how much resolution an avatar's face gets. At 320x180
+ * every remote face arrived as the 180p layer, and since the face crop samples
+ * roughly a quarter of the frame and stretches it across the plane, that left
+ * about 66x87 real pixels to magnify. That is the blur, and tracked framing
+ * made it worse by cropping tighter than the old fixed zoom did.
  *
- * Matched to the capture resolution so the top layer is requested. The face
- * plane renders around 250px tall, and the crop keeps roughly half the frame
- * height, so anything below 540 is being upscaled before it is even drawn.
+ * Matched to `CAPTURE`, so the top layer is what a face you are looking at
+ * gets. It was 960x540 to match an h540 capture, and that is the single most
+ * expensive line this file ever had: it asked the SFU for 800 kbps per remote,
+ * for every remote, because every element in the sink is the same size and
+ * `adaptiveStream` had no reason to send less. Eight people at a table was
+ * about 2.5 Mbps of downstream each and roughly 9 GB an hour off the LiveKit
+ * bill for one room. The face plane renders around 250px tall and the crop
+ * keeps roughly half the frame height, so 360 gives ~180px for a 250px plane -
+ * a mild upscale you have to be looking for, at less than half the bitrate.
  */
-const SINK_WIDTH = 960;
-const SINK_HEIGHT = 540;
+const SINK_WIDTH = CAPTURE.width;
+const SINK_HEIGHT = CAPTURE.height;
 
 /** Off-screen but laid out, not `display:none`, and not zero-size. */
 function ensureMediaSink(): HTMLElement {
@@ -193,12 +213,33 @@ export class LiveKitProvider implements MediaProvider {
         // Without simulcast there are no layers, so adaptiveStream and
         // setQuality both quietly become no-ops.
         simulcast: true,
-        videoSimulcastLayers: [VideoPresets.h180, VideoPresets.h360],
+        // The ladder `scene/attention.ts` spends. Three rungs, because that
+        // module has exactly three levels: the face you are turned towards
+        // gets `CAPTURE`, faces in your peripheral vision get h180, and faces
+        // behind you get h90. Keep it at three - drop one and two of those
+        // levels silently collapse onto the same layer, which is how you end
+        // up paying peripheral prices for seats nobody can see.
+        //
+        // h90 is the floor and the one thing here worth watching: at 160x90 a
+        // face is ~80x45 real pixels after the crop. That is fine for a head
+        // you are not looking at and would be poor if it were ever the level
+        // you rest on, which is what `HIGH_ANGLE`/`MEDIUM_ANGLE` and their
+        // hysteresis exist to prevent. If distant seats read as smears rather
+        // than as people, raise this rung before touching anything else.
+        videoSimulcastLayers: [VideoPresets.h90, VideoPresets.h180],
+        // Voice at a card table, not music. The SDK's default is
+        // `AudioPresets.music` at 48 kbps, which is twice what speech needs
+        // and is paid per subscriber per speaker. DTX and RED stay on at
+        // their defaults: silence is already nearly free, and the redundancy
+        // is what keeps a dropped packet from clipping a word.
+        audioPreset: AudioPresets.speech,
       },
       videoCaptureDefaults: {
-        // A face cropped onto an avatar head does not need more, and six of
+        // A face cropped onto an avatar head does not need more, and eight of
         // these at once is the frame budget the art direction lives inside.
-        resolution: VideoPresets.h540.resolution,
+        // This is also the top simulcast rung, so it is the ceiling on what a
+        // face you are looking directly at can cost.
+        resolution: CAPTURE.resolution,
       },
     });
 
