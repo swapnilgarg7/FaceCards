@@ -6,15 +6,19 @@ import {
   type JoinOptions,
   type PokerStateInstance,
 } from "@facecards/shared";
+import { httpUrl, wsUrl } from "./endpoints.js";
+import { ensureAwake } from "./wake.js";
 
 /**
  * Colyseus transport. Everything here is a request to the authoritative
  * server; nothing here decides anything about the game.
+ *
+ * Both entry points wait on `ensureAwake()` first. On a free Render instance
+ * the server may be spun down, and a WebSocket that opens against a booting
+ * instance fails rather than queueing the way an HTTP request does - so the
+ * cheap, patient, retryable probe goes first and the socket follows once
+ * something has actually answered.
  */
-
-const httpUrl =
-  import.meta.env.VITE_SERVER_HTTP_URL ?? "http://localhost:2567";
-const wsUrl = import.meta.env.VITE_SERVER_WS_URL ?? "ws://localhost:2567";
 
 export type PokerRoom = Room<PokerStateInstance>;
 
@@ -38,6 +42,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
  * stays private.
  */
 export async function createRoom(): Promise<string> {
+  await ensureAwake();
   const { code } = await api<CreateRoomResponse>("/api/rooms", {
     method: "POST",
   });
@@ -46,6 +51,7 @@ export async function createRoom(): Promise<string> {
 
 /** Join an existing room by code. Fails if no such room, never creates one. */
 export async function joinRoom(options: JoinOptions): Promise<PokerRoom> {
+  await ensureAwake();
   return colyseus.join<PokerStateInstance>(ROOM_NAME, {
     ...options,
     code: options.code.trim().toUpperCase(),

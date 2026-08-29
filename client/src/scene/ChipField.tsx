@@ -141,12 +141,17 @@ export function ChipField({ snapshot, placed, preview }: ChipFieldProps) {
     if (!node) return;
 
     const step = delta / FADE_SECONDS;
+    // The pool is 256 so it never has to be resized mid-hand, but a table
+    // rarely draws half of that, and an instance past the live range is still
+    // a matrix through the vertex shader. `assignChips` packs towards low
+    // indices, so the count can simply follow the highest live one.
+    let highest = -1;
 
     for (let i = 0; i < MAX_CHIPS; i++) {
       const chip = chips.current[i];
       if (!chip || !chip.live) {
-        // Parked below the felt at zero scale: an instance is always drawn,
-        // so an unused one has to be drawn as nothing.
+        // Parked below the felt at zero scale: an instance inside the drawn
+        // range has to be drawn as nothing.
         dummy.position.set(0, -10, 0);
         dummy.scale.setScalar(0);
         dummy.rotation.set(0, 0, 0);
@@ -154,6 +159,7 @@ export function ChipField({ snapshot, placed, preview }: ChipFieldProps) {
         node.setMatrixAt(i, dummy.matrix);
         continue;
       }
+      highest = i;
 
       chip.scale = Math.min(
         1,
@@ -173,6 +179,7 @@ export function ChipField({ snapshot, placed, preview }: ChipFieldProps) {
       dummy.updateMatrix();
       node.setMatrixAt(i, dummy.matrix);
     }
+    node.count = highest + 1;
     node.instanceMatrix.needsUpdate = true;
   });
 

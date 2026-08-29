@@ -139,6 +139,12 @@ anyone, the game server is fine and the LiveKit credentials are wrong.
   outbound traffic the service initiates, which is the category Render's docs
   reserve the right to suspend for.
 
+  The ping is not a substitute for handling the wait in the client, and the
+  client is not a substitute for the ping. The ping makes cold starts rare;
+  `client/src/net/wake.ts` makes the ones that still happen legible. A deploy,
+  a crash, an hour when the monitor is down, and the end of a month that ran
+  out of instance hours all produce a cold start no ping prevents.
+
 - **Untested: whether a live WebSocket alone counts as traffic.** The docs say a
   spun-down service wakes on "an HTTP request or new WebSocket connection", and
   say spin-down follows 15 minutes with no inbound traffic, without settling

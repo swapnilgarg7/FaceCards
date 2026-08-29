@@ -6,12 +6,14 @@ import {
   ROOM_CODE_PATTERN,
   isAvatarId,
 } from "@facecards/shared";
+import { useServerWake } from "../net/useServerWake.js";
 import {
   queryMediaPermission,
   requestMediaPermission,
   type MediaPermission,
 } from "../media/permissions.js";
 import { AvatarPicker } from "./AvatarPicker.js";
+import { ServerWaking } from "./ServerWaking.js";
 
 /**
  * The lobby, in two shapes.
@@ -75,6 +77,9 @@ export function Lobby({
   });
   const [code, setCode] = useState(initialCode);
   const [permission, setPermission] = useState<MediaPermission>("unknown");
+  // Starts the server booting the moment this mounts, so the wait overlaps
+  // with filling the form in rather than following it. See net/wake.ts.
+  const wake = useServerWake();
   const [permissionNote, setPermissionNote] = useState<string | null>(null);
 
   // A malformed code in the URL is not an invite: fall through to the manual
@@ -185,6 +190,8 @@ export function Lobby({
           You have been invited to a table. Grab a seat.
         </p>
 
+        <ServerWaking status={wake} />
+
         <form className="lobby__invited" onSubmit={submitJoin}>
           <p className="lobby__room">
             Room <code className="code">{initialCode}</code>
@@ -221,6 +228,8 @@ export function Lobby({
     <main className="lobby">
       <h1>FaceCards</h1>
       <p className="lobby__sub">Sit down at a table with your friends.</p>
+
+      <ServerWaking status={wake} />
 
       {nameField}
       {picker}

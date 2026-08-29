@@ -816,3 +816,75 @@ h2 {
   letter-spacing: 0.06em;
   color: var(--dim);
 }
+
+/* Cold-start banner. Quiet enough to ignore, clear enough to answer "is this
+   thing broken?" without anyone having to ask. */
+.waking {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: var(--panel);
+}
+.waking__row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+}
+.waking__title {
+  font-weight: 600;
+}
+.waking__eta {
+  margin-left: auto;
+  color: var(--dim);
+  /* Tabular figures so a counting-down number does not jitter its own row. */
+  font-variant-numeric: tabular-nums;
+}
+.waking__pulse {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: waking-pulse 1.6s ease-in-out infinite;
+}
+.waking__track {
+  height: 0.25rem;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+.waking__fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  /* Matches the 200ms tick, so the bar glides instead of stepping. */
+  transition: width 200ms linear;
+}
+.waking .note {
+  margin: 0;
+}
+
+@keyframes waking-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* A pulsing dot and a sliding bar are decoration; anyone who asked the OS to
+   stop moving things gets the same information without the motion. */
+@media (prefers-reduced-motion: reduce) {
+  .waking__pulse {
+    animation: none;
+    opacity: 0.8;
+  }
+  .waking__fill {
+    transition: none;
+  }
+}
