@@ -51,6 +51,19 @@ export function cardName(index: number): string {
   return rank + suit;
 }
 
+/**
+ * How a rank is *printed*.
+ *
+ * The wire, the engine and every card string stay on the single-character
+ * "T", because a fixed-width name is what makes `cardIndex` a two-character
+ * check. Only a drawn card differs: a real deck prints the ten as "10", so
+ * every face - the atlas cells and the HUD's DOM cards alike - goes through
+ * here rather than printing the letter the server sent.
+ */
+export function rankLabel(rank: string): string {
+  return rank.toUpperCase() === "T" ? "10" : rank;
+}
+
 export interface CardSpot {
   x: number;
   y: number;

@@ -7,6 +7,8 @@
  * this stays a div and does not pretend otherwise.
  */
 
+import { rankLabel } from "../scene/cards.js";
+
 const SUITS: Record<string, { glyph: string; red: boolean }> = {
   c: { glyph: "♣", red: false },
   d: { glyph: "♦", red: true },
@@ -26,7 +28,7 @@ export function PlayingCard({
     return <span className="card card--back" aria-label="face-down card" />;
   }
 
-  const rank = card[0] ?? "?";
+  const rank = rankLabel(card[0] ?? "?");
   const suit = SUITS[(card[1] ?? "").toLowerCase()];
   const classes = [
     "card",
@@ -98,7 +100,7 @@ export function FlipCard({
   /** Not part of the five that won. Still on the table, no longer the story. */
   dimmed?: boolean;
 }) {
-  const rank = card?.[0] ?? "?";
+  const rank = rankLabel(card?.[0] ?? "?");
   const suit = SUITS[(card?.[1] ?? "").toLowerCase()];
   const classes = [
     "flip",

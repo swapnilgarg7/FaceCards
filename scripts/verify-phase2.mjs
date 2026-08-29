@@ -317,6 +317,14 @@ check(
 
 section("The next hand deals itself");
 
+// The payout screen now waits for the table rather than for a timer: the
+// server holds the next deal until every seat still in the game has sent
+// `NextHand` (or until `PAYOUT_MAX_MS`). A headless client that never sends it
+// is an AFK player, and the deal correctly waits a minute for it - which would
+// silently strand every cross-hand leak assertion below behind a timeout. So
+// the clients do what a person does at the end of a showdown, and press it.
+for (const p of seats) p.room.send(ClientMessage.NextHand);
+
 const redealt = await waitFor(
   () => alice.room.state.handNumber === 2,
   PAYOUT_DISPLAY_MS + 6000,

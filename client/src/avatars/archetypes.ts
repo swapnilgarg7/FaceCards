@@ -163,7 +163,11 @@ const LOOKS: Record<AvatarId, LookShape> = {
   },
   shark: {
     headColour: "#44586a",
-    headStretch: [1.02, 0.96, 1.12],
+    // The snout was 1.12 deep, and `HEAD_SCALE.z` times that put the front of
+    // the skull *in front of* `FACE_INSET` - so a shark's face plane was
+    // inside its own head and lost its middle to the depth test. The fin is
+    // what carries this silhouette anyway.
+    headStretch: [1.02, 0.96, 1.02],
     headPiece: { kind: "fin", height: 0.17, length: 0.16 },
     outfit: { kind: "collarBand" },
     tie: false,

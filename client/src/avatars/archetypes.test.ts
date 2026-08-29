@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { AVATARS, AVATAR_IDS } from "@facecards/shared";
 import { avatarLook } from "./archetypes.js";
-import { FACE_PLANE_HEIGHT, HEAD_SCALE } from "../scene/body.js";
+import {
+  FACE_INSET,
+  FACE_PLANE_HEIGHT,
+  HEAD_RADIUS,
+  HEAD_SCALE,
+} from "../scene/body.js";
 
 describe("avatarLook", () => {
   it("has geometry for every archetype the server can hand out", () => {
@@ -46,6 +51,18 @@ describe("avatarLook", () => {
       return `${look.headPiece.kind}:${look.body}:${look.tie}`;
     });
     expect(new Set(signatures).size).toBe(AVATAR_IDS.length);
+  });
+
+  it("keeps every skull behind the face plane it carries", () => {
+    // The plane floats at `FACE_INSET` and is drawn after the skull with the
+    // depth test on, so a head stretched deeper than the inset does not push
+    // the face forward: it swallows it. The shark used to, and the failure is
+    // a face with its middle missing rather than anything that reads as a
+    // depth bug.
+    for (const id of AVATAR_IDS) {
+      const [, , z] = avatarLook(id).headScale;
+      expect(HEAD_RADIUS * z).toBeLessThan(FACE_INSET);
+    }
   });
 
   it("never puts a head piece where the face plane goes", () => {

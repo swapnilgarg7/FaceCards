@@ -211,9 +211,27 @@ check(
     !bobJson.includes(`"${aliceMe.holeCard0}"`) &&
     !bobJson.includes(`"${aliceMe.holeCard1}"`),
 );
+// Structural, not textual, and that is the whole point of it.
+//
+// This used to assert that one exact serialized substring - every public field
+// of Alice's row, in order, followed by `"holeCard0"` - was absent from Bob's
+// payload. Every field added to `Player` since then (`ready`, `readyNext`,
+// `sittingOut`, `totalBuyIn`, `pendingBuyIn`, `handsPlayed`, `handsWon`,
+// `owesBlind`) landed between two of the fields it named, so the substring
+// stopped being able to match anything at all and the check passed
+// unconditionally - including, had it ever happened, in a build that really
+// was shipping Alice's cards to Bob. A guard against the single most dangerous
+// regression in this project must not be able to rot when somebody adds a
+// boolean. Asking the decoded object whether it *has* the key cannot.
+const bobsViewOfAlice = bob.state.players.get(alice.sessionId);
 check(
   "the private key itself is absent from the other player's entry",
-  !bobJson.includes(`"sessionId":"${alice.sessionId}","displayName":"Alice","seat":${aliceMe.seat},"connected":true,"stack":${aliceMe.stack},"bet":${aliceMe.bet},"status":"${aliceMe.status}","cardCount":2,"holeCard0"`),
+  Boolean(bobsViewOfAlice) &&
+    bobsViewOfAlice.holeCard0 === undefined &&
+    bobsViewOfAlice.holeCard1 === undefined,
+  bobsViewOfAlice
+    ? `holeCard0=${bobsViewOfAlice.holeCard0} holeCard1=${bobsViewOfAlice.holeCard1}`
+    : "Alice is missing from Bob's roster entirely",
 );
 check(
   "everyone can still see that the other seat is holding cards",

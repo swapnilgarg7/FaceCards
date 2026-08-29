@@ -37,8 +37,14 @@ function mask(el: HTMLCanvasElement): THREE.CanvasTexture {
 let faceMask: THREE.CanvasTexture | null = null;
 
 /**
- * Soft-edged oval. The face plane is a rectangle carrying a rectangular video
- * frame; this is what makes it read as a head rather than a television.
+ * Soft-edged circle. The face plane is a square carrying a square crop of a
+ * webcam frame; this is what makes it read as a head rather than a television.
+ *
+ * Radius 118 of a possible 128, so the blur has somewhere to land: a feather
+ * that runs off the edge of the canvas comes back as a hard line down the side
+ * of every face, because the mask is clamped rather than repeated. The ten
+ * pixels left over are about a centimetre of skull showing round the face,
+ * which is what stops the disc reading as a badge pinned to a head.
  */
 export function faceMaskTexture(): THREE.CanvasTexture {
   if (faceMask) return faceMask;
@@ -47,10 +53,10 @@ export function faceMaskTexture(): THREE.CanvasTexture {
   ctx.fillStyle = "#000";
   ctx.fillRect(0, 0, 256, 256);
   // Feathered so the edge dissolves into the head instead of cutting it.
-  ctx.filter = "blur(10px)";
+  ctx.filter = "blur(8px)";
   ctx.fillStyle = "#fff";
   ctx.beginPath();
-  ctx.ellipse(128, 128, 104, 122, 0, 0, Math.PI * 2);
+  ctx.arc(128, 128, 118, 0, Math.PI * 2);
   ctx.fill();
 
   faceMask = mask(el);
@@ -59,7 +65,15 @@ export function faceMaskTexture(): THREE.CanvasTexture {
 
 let ringMask: THREE.CanvasTexture | null = null;
 
-/** Halo behind the face, lit while that player is talking. */
+/**
+ * Halo behind the face, lit while that player is talking.
+ *
+ * A ring now rather than an ellipse, and sized to straddle the edge of the
+ * skull rather than to bound the old oval: on a plane `HALO_SCALE` larger than
+ * the face, 112 of 128 lands just outside a head of `HEAD_RADIUS`. It reads as
+ * a glow coming off the head instead of a second, larger outline floating
+ * around it.
+ */
 export function speakingRingTexture(): THREE.CanvasTexture {
   if (ringMask) return ringMask;
 
@@ -70,7 +84,7 @@ export function speakingRingTexture(): THREE.CanvasTexture {
   ctx.strokeStyle = "#fff";
   ctx.lineWidth = 12;
   ctx.beginPath();
-  ctx.ellipse(128, 128, 112, 128, 0, 0, Math.PI * 2);
+  ctx.arc(128, 128, 112, 0, Math.PI * 2);
   ctx.stroke();
 
   ringMask = mask(el);

@@ -64,11 +64,16 @@ const MAX_PLAUSIBLE_ASPECT = 5;
  *
  * This is the whole look of the thing. Push it toward 1 and you get a passport
  * photo cropped at the hairline; drop it to 0.3 and the avatar is wearing a
- * picture of a room with someone in it. Just under two-thirds leaves the
- * forehead and a little chin inside the oval mask, which is what reads as a
- * head rather than a cutout.
+ * picture of a room with someone in it.
+ *
+ * Raised from 0.62 when the plane went from a portrait oval to a circle. The
+ * window is the plane's shape, so it went from tall-and-narrow to square,
+ * which at the old fill left a band of somebody's kitchen down each side of
+ * their head. Just over two-thirds puts the face across the circle with the
+ * forehead and a little chin still inside it, which is what reads as a head
+ * rather than a cutout.
  */
-export const FOCUS_FACE_FILL = 0.62;
+export const FOCUS_FACE_FILL = 0.68;
 
 /**
  * Floor on window height, as a fraction of the frame. Someone sitting far back

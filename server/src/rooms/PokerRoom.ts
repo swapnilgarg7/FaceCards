@@ -171,6 +171,25 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
    * finish.
    */
   private payoutStartedAt = 0;
+  /**
+   * The next deal is committed and the vote is closed.
+   *
+   * A latch, and it exists to close a real hole rather than to tidy anything
+   * up. `considerContinuing` is reachable from `SitOut`, which any client may
+   * send at any rate it likes, and it used to call `scheduleDeal`
+   * unconditionally - and `scheduleDeal` *clears* the pending timer before
+   * arming a new one. So once the table had voted, a client toggling sit-out
+   * and sit-in faster than `NEXT_HAND_BEAT_MS` pushed the deal 450ms further
+   * out on every message, having already discarded the `PAYOUT_MAX_MS`
+   * backstop. The room would sit in `Payout` forever with nothing left to
+   * rescue it.
+   *
+   * Once the deal is armed it stays armed. Anything that changes the roster
+   * after that point - a seat buying in, sitting back in, or joining - is a
+   * player who will be dealt into the next hand without having watched this
+   * showdown, which is the same deal a player who joins mid-hand already gets.
+   */
+  private continuing = false;
 
   override onCreate(options: { code?: unknown }): void {
     const code = normaliseRoomCode(options?.code);
@@ -814,6 +833,7 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
     // Next round and the deal follows; `PAYOUT_MAX_MS` is only the backstop
     // for a table that walked away. Either way there is no lobby round-trip.
     this.payoutStartedAt = Date.now();
+    this.continuing = false;
     this.state.players.forEach((player) => {
       player.readyNext = false;
     });
@@ -853,9 +873,14 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
    * puts the table back to waiting.
    */
   private considerContinuing(): void {
-    if (this.hand || this.state.phase !== TablePhase.Payout) return;
+    // Latched, and see the note on the field: without this, any client could
+    // hold the table in `Payout` indefinitely by toggling sit-out, because
+    // each call re-armed the deal timer and threw away the backstop.
+    if (this.hand || this.continuing) return;
+    if (this.state.phase !== TablePhase.Payout) return;
     if (this.eligiblePlayers().some((player) => !player.readyNext)) return;
 
+    this.continuing = true;
     // The client is still turning cards over. Whatever the table clicked, the
     // showdown gets the whole of `PAYOUT_DISPLAY_MS` to play out.
     const watched = Date.now() - this.payoutStartedAt;
@@ -950,6 +975,7 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
   private deal(): void {
     if (this.hand) return;
     this.payoutStartedAt = 0;
+    this.continuing = false;
 
     // Chips bought during the last hand join their stacks now, which is also
     // what can take a busted seat back over the line into the next one.

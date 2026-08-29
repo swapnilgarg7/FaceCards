@@ -15,14 +15,33 @@
  * the chin off every face in the room.
  */
 
-/** Portrait, because faces are. The crop honours this exactly. */
-export const FACE_PLANE_WIDTH = 0.26;
-export const FACE_PLANE_HEIGHT = 0.34;
+/**
+ * Square, so the face reads as a circle on a round head rather than an oval
+ * pasted on one. The crop honours this exactly: `faceCrop.ts` samples a window
+ * of the webcam frame with the plane's aspect in *source pixels*, so a square
+ * plane takes a square crop and nobody is stretched to fit it.
+ *
+ * The oval this replaced was a portrait rectangle masked down to an ellipse,
+ * which meant the framing had to be tall and narrow to match, and a webcam
+ * frame is neither. Round takes less from the sides of the frame and none of
+ * the vertical, and it is the shape a head already is.
+ */
+export const FACE_PLANE_WIDTH = 0.29;
+export const FACE_PLANE_HEIGHT = 0.29;
 export const FACE_PLANE_ASPECT = FACE_PLANE_WIDTH / FACE_PLANE_HEIGHT;
 
-export const HEAD_RADIUS = 0.14;
-/** Flattened front to back and stretched a little tall, as skulls are. */
-export const HEAD_SCALE = { x: 0.94, y: 1.06, z: 0.9 } as const;
+export const HEAD_RADIUS = 0.15;
+/**
+ * Round from the front, flattened front to back.
+ *
+ * The skull used to be narrowed and stretched into an egg, from back when the
+ * face on it was an oval. A circular face inside an oval skull leaves a rim
+ * that is thick at the temples and thin at the crown, which reads as a badly
+ * cut sticker. Equal x and y keeps that rim even the whole way round; z stays
+ * shallow because a head is not a ball, and because the face plane floats in
+ * front of it and has to clear it.
+ */
+export const HEAD_SCALE = { x: 1, y: 1, z: 0.9 } as const;
 /** How far the face plane floats off the head, so it never z-fights. */
 export const FACE_INSET = HEAD_RADIUS * 0.94;
 

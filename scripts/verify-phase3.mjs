@@ -58,6 +58,34 @@ const waitFor = async (predicate, timeoutMs, label = "condition") => {
   return false;
 };
 
+/**
+ * Do what a table does at the end of a showdown, and ask for the next one.
+ *
+ * The payout screen now waits for the people at the table rather than for a
+ * timer: the server holds the next deal until every seat still in the game has
+ * sent `NextHand`, and only falls back to `PAYOUT_MAX_MS` for a table that
+ * walked away. A headless client that never presses it *is* that table, so
+ * without this every wait-for-the-next-deal below would sit out a full minute
+ * and time out - silently stranding the cross-hand leak assertions that are
+ * the entire point of this script.
+ */
+const askForNextHand = async () => {
+  await waitFor(
+    () => state().phase === TablePhase.Payout,
+    8000,
+    "the payout screen",
+  );
+  for (const p of seats) {
+    // A seat that dropped mid-script has no socket to send on, and does not
+    // need one: the server stopped waiting for it when it went.
+    try {
+      p.room.send(ClientMessage.NextHand);
+    } catch {
+      // Gone. Not something this script has to care about.
+    }
+  }
+};
+
 // -------------------------------------------------------------- six seats
 
 const created = await fetch(`${HTTP}/api/rooms`, { method: "POST" }).then((r) =>
@@ -446,6 +474,7 @@ check(
   playerOf(sitter).sittingOut === true,
 );
 
+await askForNextHand();
 const handTwo = await waitFor(
   () => state().handNumber === 2,
   PAYOUT_DISPLAY_MS + 10_000,
@@ -484,6 +513,7 @@ while (state().phase !== TablePhase.Payout && state().phase !== TablePhase.Waiti
   await waitFor(() => signature() !== before, 4000, "the fold to land");
 }
 
+await askForNextHand();
 const handThree = await waitFor(
   () => state().handNumber === 3,
   PAYOUT_DISPLAY_MS + 10_000,
