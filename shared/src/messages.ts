@@ -18,6 +18,8 @@ export const ClientMessage = {
   SitOut: "sit-out",
   /** "Deal me back in." */
   SitIn: "sit-in",
+  /** "Put this many chips behind my seat." Payload: `BuyInIntent`. */
+  BuyIn: "buy-in",
   /** Ask the server to re-issue a media token, e.g. after a token expiry. */
   RequestMediaToken: "request-media-token",
 } as const;
@@ -76,6 +78,20 @@ export interface PokerActionIntent {
    * that arrives a street late cannot act for you a second time.
    */
   turn: number;
+}
+
+/**
+ * A request to put more chips behind a seat.
+ *
+ * An intent like every other. The client names an amount; the server checks it
+ * against the buy-in band, the stack ceiling and whether the seat is currently
+ * in a hand, and it is the server that decides both the number and *when* it
+ * lands. A seat in a live hand plays it out with the chips it was dealt with,
+ * so a mid-hand buy-in is held and applied before the next deal.
+ */
+export interface BuyInIntent {
+  /** Chips to add. Whole chips, inside the server's buy-in band. */
+  amount: number;
 }
 
 /** Body of `ServerMessage.ActionRejected`. */

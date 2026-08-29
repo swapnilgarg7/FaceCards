@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   KEYBINDS,
-  RESERVED_KEYS,
+  LOOK_AXES,
+  LOOK_KEYBIND_IDS,
   keyLabel,
   keybind,
   matchKeybind,
@@ -23,13 +24,34 @@ function press(
 }
 
 describe("the binding table", () => {
-  it("leaves W, A, S and D alone for camera movement later", () => {
-    // The point of the test: taking a shortcut away from players after they
-    // have learned it is worse than never offering it, so this fails loudly
-    // the moment someone reaches for a movement key.
-    for (const reserved of RESERVED_KEYS) {
-      const clash = KEYBINDS.find((bind) => bind.key.toLowerCase() === reserved);
-      expect(clash, `${reserved.toUpperCase()} is reserved`).toBeUndefined();
+  it("gives W, A, S and D to the look, and to nothing else", () => {
+    // They were held back for this, and the reason the movement keys were
+    // available when the time came is that nothing else was ever allowed to
+    // take them. Nothing else may take them now either.
+    const movement = new Map(
+      LOOK_KEYBIND_IDS.map((id) => [keybind(id).key, id]),
+    );
+    expect([...movement.keys()].sort()).toEqual(["a", "d", "s", "w"]);
+
+    for (const bind of KEYBINDS) {
+      const owner = movement.get(bind.key.toLowerCase());
+      if (!owner) continue;
+      expect(bind.id, `${bind.key.toUpperCase()} turns the head`).toBe(owner);
+    }
+  });
+
+  it("points each look key at exactly one direction", () => {
+    // Positive yaw is left and positive pitch is up, matching three.js, so
+    // nothing between the key and the camera has to flip a sign.
+    expect(LOOK_AXES.lookLeft).toEqual({ yaw: 1, pitch: 0 });
+    expect(LOOK_AXES.lookUp).toEqual({ yaw: 0, pitch: 1 });
+    // Opposite keys are exact opposites, so holding both cancels rather than
+    // drifting slowly one way.
+    expect(LOOK_AXES.lookLeft.yaw).toBe(-LOOK_AXES.lookRight.yaw);
+    expect(LOOK_AXES.lookUp.pitch).toBe(-LOOK_AXES.lookDown.pitch);
+    for (const id of LOOK_KEYBIND_IDS) {
+      const axis = LOOK_AXES[id];
+      expect(Math.abs(axis.yaw) + Math.abs(axis.pitch)).toBe(1);
     }
   });
 
@@ -44,14 +66,15 @@ describe("the binding table", () => {
     for (const bind of KEYBINDS) expect(bind.label.length).toBeGreaterThan(0);
   });
 
-  it("marks the one binding that is held rather than pressed", () => {
+  it("marks every binding that is held rather than pressed", () => {
     // Peeking is a hold because that is what the gesture is: you are holding
-    // the corner of a card up, and letting go puts it face down. The flag is
-    // what routes it to `useHoldKeybind` instead of the keydown dispatcher,
-    // so losing it would peek once and never put the cards back.
-    const held = KEYBINDS.filter((bind) => bind.hold);
-    expect(held.map((bind) => bind.id)).toEqual(["peek"]);
-    expect(held[0]!.key).toBe(" ");
+    // the corner of a card up, and letting go puts it face down. Turning your
+    // head is a hold for the same reason - a key has no position, only a
+    // duration. The flag is what keeps all five out of the keydown
+    // dispatcher, which has nowhere to put a keyup.
+    const held = KEYBINDS.filter((bind) => bind.hold).map((bind) => bind.id);
+    expect(new Set(held)).toEqual(new Set(["peek", ...LOOK_KEYBIND_IDS]));
+    expect(keybind("peek").key).toBe(" ");
   });
 
   it("looks a binding up by id, and refuses an unknown one", () => {
@@ -98,11 +121,25 @@ describe("matching", () => {
     expect(matchKeybind(press("c", { altKey: true }))).toBeUndefined();
   });
 
-  it("does not fire on a reserved movement key", () => {
-    for (const reserved of RESERVED_KEYS) {
-      expect(matchKeybind(press(reserved))).toBeUndefined();
-      expect(matchKeybind(press(reserved.toUpperCase()))).toBeUndefined();
+  it("recognises the movement keys in either case", () => {
+    expect(matchKeybind(press("a"))?.id).toBe("lookLeft");
+    expect(matchKeybind(press("D"))?.id).toBe("lookRight");
+    expect(matchKeybind(press("w"))?.id).toBe("lookUp");
+    expect(matchKeybind(press("S"))?.id).toBe("lookDown");
+  });
+
+  it("keeps the movement keys out of the keydown dispatcher", () => {
+    // `useKeybinds` refuses to fire anything flagged `hold`, so W, A, S and D
+    // reach `useLookKeys` and nothing else. Firing them here as well would
+    // turn the head once per press and never turn it back.
+    for (const id of LOOK_KEYBIND_IDS) {
+      expect(matchKeybind(press(keybind(id).key))?.hold).toBe(true);
     }
+  });
+
+  it("leaves a movement key to the browser when a modifier is down", () => {
+    expect(matchKeybind(press("a", { ctrlKey: true }))).toBeUndefined();
+    expect(matchKeybind(press("s", { metaKey: true }))).toBeUndefined();
   });
 
   it("hands a held key to the dispatcher that knows about letting go", () => {

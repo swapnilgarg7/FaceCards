@@ -1,62 +1,143 @@
-import { DoubleSide } from "three";
+import { useMemo } from "react";
+import * as THREE from "three";
 import { TABLE } from "./layout.js";
+import {
+  INLAY_INNER,
+  INLAY_OUTER,
+  FELT_RADIUS,
+  NEON_RADIUS,
+  NEON_TUBE,
+  NEON_Y,
+  TABLE_SEGMENTS,
+  apronProfile,
+  pedestalProfile,
+  railProfile,
+  type ProfilePoint,
+} from "./tableProfile.js";
+import {
+  PALETTE,
+  brassMaterial,
+  contactShadowMaterial,
+  feltMaterial,
+  leatherMaterial,
+  neonMaterial,
+  ringGlowMaterial,
+  woodMaterial,
+} from "./surfaces.js";
 
 /**
- * The table, built from primitives.
+ * The table. The hero asset, and the only object in the room allowed to be
+ * one.
  *
- * Research turned up no clean CC0 poker table mesh, and turning one here is
- * the better answer anyway: it is a handful of triangles, it costs no licence
- * row, and its proportions stay a number we can tune against the eye-line
- * rather than a shape we inherited. Phase 5 replaces this with a dressed
- * Blender export at the same dimensions.
+ * Turned rather than downloaded, as `tableProfile.ts` explains: research found
+ * no clean CC0 poker table mesh, and a surface of revolution authored as
+ * numbers is both cheaper and *checkable*. Everything about its proportions
+ * that matters to the game - that the rail clears the deck, that the felt
+ * clears a full stack - is asserted in `tableProfile.test.ts` against the same
+ * anchors the scene draws chips and cards to.
  *
- * Round rather than oval, because that is what gives every seat an equal view
- * of every other; see `TABLE` in `layout.ts`.
+ * Five materials, five draw calls: felt, brass, leather, walnut, neon. Plus
+ * two unlit quads for the painted light. That is the whole table.
  */
 
-const PEDESTAL_HEIGHT = TABLE.topY - 0.08;
+/** A profile in table-local metres, lifted onto the felt's own height. */
+function lathePoints(profile: readonly ProfilePoint[]): THREE.Vector2[] {
+  return profile.map((p) => new THREE.Vector2(p.r, TABLE.topY + p.y));
+}
+
+function useLathe(profile: readonly ProfilePoint[]): THREE.LatheGeometry {
+  return useMemo(
+    () => new THREE.LatheGeometry(lathePoints(profile), TABLE_SEGMENTS),
+    [profile],
+  );
+}
+
+/**
+ * How far out the neon's painted spill reaches on the floor. The disc is drawn
+ * this wide and the bright ring inside it is placed as a fraction of it, which
+ * is the one conversion `ringGlowTexture` needs from world units.
+ */
+const NEON_SPILL_RADIUS = 1.75;
+
+/** The pool of dark the table stands in. Wider than the table, and softer. */
+const CONTACT_RADIUS = 1.55;
 
 export function PokerTable() {
+  const rail = useLathe(useMemo(() => railProfile(), []));
+  const apron = useLathe(useMemo(() => apronProfile(), []));
+  const pedestal = useLathe(useMemo(() => pedestalProfile(), []));
+
   return (
     <group>
-      <mesh position={[0, TABLE.topY - 0.03, 0]} receiveShadow>
-        <cylinderGeometry args={[TABLE.radius, TABLE.radius, 0.06, 48]} />
-        <meshStandardMaterial color="#16563f" roughness={0.95} />
+      {/* The playing surface. One 1024px disc rather than a tiled swatch, so
+          the betting line can be drawn at a world radius the layout agrees
+          with; see `feltTexture`. */}
+      <mesh
+        position={[0, TABLE.topY, 0]}
+        rotation-x={-Math.PI / 2}
+        receiveShadow
+        material={feltMaterial()}
+      >
+        <circleGeometry args={[FELT_RADIUS, TABLE_SEGMENTS]} />
       </mesh>
 
-      {/* Padded rail. */}
-      <mesh position={[0, TABLE.topY, 0]} rotation-x={-Math.PI / 2} receiveShadow castShadow>
-        <torusGeometry args={[TABLE.radius, TABLE.railTube, 10, 56]} />
-        <meshStandardMaterial color="#3b2318" roughness={0.45} />
+      {/* The brass race between cloth and leather. Two rings of triangles, and
+          the single detail that does most of the work of reading as premium:
+          it is the only genuinely metallic thing on the table, so it is the
+          only thing that moves its highlight as you turn your head. */}
+      <mesh
+        position={[0, TABLE.topY + 0.0012, 0]}
+        rotation-x={-Math.PI / 2}
+        material={brassMaterial()}
+      >
+        <ringGeometry args={[INLAY_INNER, INLAY_OUTER, TABLE_SEGMENTS]} />
       </mesh>
 
-      {/* Skirt, so the felt does not float. */}
-      <mesh position={[0, TABLE.topY - 0.13, 0]}>
-        <cylinderGeometry
-          args={[TABLE.radius, TABLE.radius * 0.96, 0.2, 48, 1, true]}
-        />
-        <meshStandardMaterial
-          color="#2a1a12"
-          roughness={0.6}
-          side={DoubleSide}
-        />
+      <mesh
+        geometry={rail}
+        material={leatherMaterial()}
+        castShadow
+        receiveShadow
+      />
+      <mesh geometry={apron} material={woodMaterial()} receiveShadow />
+      <mesh geometry={pedestal} material={woodMaterial(0.72)} />
+
+      {/* The neon race, tucked under the rail's outer lip so what a seated
+          player sees is the light on the apron rather than the tube. Its
+          height is checked against the face band in `decor.ts`. */}
+      <mesh
+        position={[0, TABLE.topY + NEON_Y, 0]}
+        rotation-x={-Math.PI / 2}
+        material={neonMaterial(PALETTE.neonPink)}
+      >
+        <torusGeometry args={[NEON_RADIUS, NEON_TUBE, 8, TABLE_SEGMENTS]} />
       </mesh>
 
-      <mesh position={[0, PEDESTAL_HEIGHT / 2, 0]} castShadow>
-        <cylinderGeometry args={[0.22, 0.34, PEDESTAL_HEIGHT, 20]} />
-        <meshStandardMaterial color="#241811" roughness={0.6} />
+      {/* What that tube throws on the floor. Painted, not cast: see the note
+          on bloom in `surfaces.ts` - a halo drawn where the fixture is beats a
+          screen-space effect that cannot tell neon from a lit forehead. */}
+      <mesh
+        position={[0, 0.014, 0]}
+        rotation-x={-Math.PI / 2}
+        renderOrder={-1}
+        material={ringGlowMaterial(
+          PALETTE.neonPink,
+          NEON_RADIUS / NEON_SPILL_RADIUS,
+        )}
+      >
+        <circleGeometry args={[NEON_SPILL_RADIUS, 40]} />
       </mesh>
 
-      <mesh position={[0, 0.03, 0]} receiveShadow>
-        <cylinderGeometry args={[0.62, 0.62, 0.06, 24]} />
-        <meshStandardMaterial color="#241811" roughness={0.6} />
-      </mesh>
-
-      {/* Floor. Finite and dark: a big bright plane would pull the eye off
-          the faces, which is the one thing the art direction must not do. */}
-      <mesh position={[0, 0, 0]} rotation-x={-Math.PI / 2} receiveShadow>
-        <circleGeometry args={[7, 40]} />
-        <meshStandardMaterial color="#14100e" roughness={1} />
+      {/* Baked contact shadow. The table weighs something, and this is what
+          says so; a shadow map aimed under a table nobody can see under would
+          cost a render pass to say the same thing worse. */}
+      <mesh
+        position={[0, 0.008, 0]}
+        rotation-x={-Math.PI / 2}
+        renderOrder={-2}
+        material={contactShadowMaterial(0.72)}
+      >
+        <circleGeometry args={[CONTACT_RADIUS, 32]} />
       </mesh>
     </group>
   );

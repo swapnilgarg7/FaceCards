@@ -39,6 +39,14 @@ export interface SeatSnapshot {
   sittingOut: boolean;
   stack: number;
   bet: number;
+  /** Every chip this seat has brought to the table, the opening stake first. */
+  totalBuyIn: number;
+  /** Chips bought mid-hand, landing at the next deal. */
+  pendingBuyIn: number;
+  handsPlayed: number;
+  handsWon: number;
+  /** Dealt out until the big blind reaches this seat. */
+  owesBlind: boolean;
   status: SeatStatusValue;
   /** Face-down cards in front of this seat. */
   cardCount: number;
@@ -87,6 +95,9 @@ export interface RoomSnapshot {
   /** Opaque token for the decision on the clock. Echoed back with an intent. */
   turn: number;
   buttonSeat: number;
+  /** Seat that posted the small blind, or -1 when it was dead. */
+  smallBlindSeat: number;
+  bigBlindSeat: number;
   smallBlind: number;
   bigBlind: number;
   handNumber: number;
@@ -121,6 +132,14 @@ export interface UseRoom {
   act(turn: number, type: PokerActionType, amount?: number): void;
   /** Deal me out from the next hand, or back in. Never affects a live hand. */
   setSittingOut(sittingOut: boolean): void;
+  /**
+   * Ask to put `amount` more chips behind this seat.
+   *
+   * A request like any other: the server checks it against the buy-in band and
+   * the stack ceiling, and decides whether the chips land now or at the end of
+   * the hand being played. A refusal comes back as an `ActionRejected`.
+   */
+  buyIn(amount: number): void;
   leave(): Promise<void>;
 }
 
@@ -150,6 +169,11 @@ function snapshotOf(room: PokerRoom): RoomSnapshot | null {
       sittingOut: player.sittingOut,
       stack: player.stack,
       bet: player.bet,
+      totalBuyIn: player.totalBuyIn,
+      pendingBuyIn: player.pendingBuyIn,
+      handsPlayed: player.handsPlayed,
+      handsWon: player.handsWon,
+      owesBlind: player.owesBlind,
       status: player.status as SeatStatusValue,
       cardCount: player.cardCount,
       ...(cards.length > 0 ? { holeCards: cards } : {}),
@@ -190,6 +214,8 @@ function snapshotOf(room: PokerRoom): RoomSnapshot | null {
     actingMs: state.actingMs,
     turn: state.turn,
     buttonSeat: state.buttonSeat,
+    smallBlindSeat: state.smallBlindSeat,
+    bigBlindSeat: state.bigBlindSeat,
     smallBlind: state.smallBlind,
     bigBlind: state.bigBlind,
     handNumber: state.handNumber,
@@ -320,6 +346,13 @@ export function useRoom(): UseRoom {
     );
   }, []);
 
+  const buyIn = useCallback((amount: number) => {
+    setRejection(null);
+    // An amount, not a stack. The server owns what the balance becomes, and
+    // owns whether the chips land now or after the hand in progress.
+    roomRef.current?.send(ClientMessage.BuyIn, { amount });
+  }, []);
+
   const leave = useCallback(async () => {
     await roomRef.current?.leave();
     roomRef.current = null;
@@ -349,6 +382,7 @@ export function useRoom(): UseRoom {
     join,
     act,
     setSittingOut,
+    buyIn,
     leave,
   };
 }

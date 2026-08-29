@@ -9,10 +9,12 @@ import { ActionBar } from "./ActionBar.js";
 import { FaceDebug } from "./FaceDebug.js";
 import { HandHud } from "./HandHud.js";
 import { Kbd } from "./Kbd.js";
+import { Leaderboard } from "./Leaderboard.js";
 import { SettingsPanel, loadSensitivity } from "./SettingsPanel.js";
 import { VideoTile } from "./VideoTile.js";
 import { useChipPush } from "./useChipPush.js";
 import { useHoldKeybind, useKeybinds } from "./useKeybinds.js";
+import { useLookKeys } from "./useLookKeys.js";
 
 /**
  * The table: a full-bleed 3D room with a thin HUD floating over it.
@@ -36,6 +38,7 @@ export function Table({
   reconnecting,
   onAct,
   onSitOutChange,
+  onBuyIn,
   onLeave,
 }: {
   snapshot: RoomSnapshot;
@@ -46,6 +49,8 @@ export function Table({
   reconnecting: boolean;
   onAct(turn: number, type: PokerActionType, amount?: number): void;
   onSitOutChange(sittingOut: boolean): void;
+  /** Ask for more chips behind this seat. The server decides how many, and when. */
+  onBuyIn(amount: number): void;
   onLeave(): void;
 }) {
   const me = snapshot.players.find((p) => p.sessionId === sessionId);
@@ -90,6 +95,12 @@ export function Table({
   );
   useHoldKeybind("peek", changePeek, !settingsOpen);
 
+  // W, A, S and D, tracked outside React because the camera reads them once a
+  // frame and a render per keystroke is the one thing the scene must not do.
+  // Released for the same three reasons the cursor is: a menu is up, or the
+  // mouse is already busy holding a card or pushing chips.
+  const lookKeys = useLookKeys(!settingsOpen && !peeking && !push.active);
+
   // Find our own face and tell the room where it is, so that the avatar
   // everyone else is looking at frames it properly. Nothing on this screen
   // shows the result: it is entirely for other people's benefit, which is also
@@ -121,6 +132,7 @@ export function Table({
           // one would make it unusable.
           lookEnabled={!settingsOpen && !peeking && !push.active}
           sensitivity={sensitivity}
+          lookKeys={lookKeys}
           peeking={peeking}
           onPeekChange={changePeek}
           betPreview={push.preview}
@@ -141,6 +153,10 @@ export function Table({
               depend on whose turn it is are printed on the action buttons
               instead, where they mean something. */}
           <div className="hud__keys">
+            <Kbd bind="lookUp" />
+            <Kbd bind="lookLeft" />
+            <Kbd bind="lookDown" />
+            <Kbd bind="lookRight" /> look around
             <Kbd bind="settings" /> settings
             <Kbd bind="mute" /> {media.micMuted ? "unmute" : "mute"}
             <Kbd bind="camera" /> camera
@@ -196,11 +212,19 @@ export function Table({
         />
       </div>
 
-      {/* What the game is doing, in words. The cards, the board, the pot and
-          every stack are on the table now, so this is the fallback spec
-          section 8 asks for rather than the game: names, chip counts and the
-          one line that says how the last hand ended. */}
+      {/* The left column, read top to bottom: who is winning and what it
+          cost them, then the pot and your own hand. It sits on the left rather
+          than the middle because the middle is where the faces are, and it is
+          one column rather than two panels because the standings answer every
+          question the old seat list did, with the buy-in numbers that give
+          them meaning. */}
       <div className="hud hud--table">
+        <Leaderboard
+          snapshot={snapshot}
+          sessionId={sessionId}
+          me={me}
+          onBuyIn={onBuyIn}
+        />
         <HandHud snapshot={snapshot} me={me} />
       </div>
 

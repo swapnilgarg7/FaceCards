@@ -37,16 +37,20 @@ export interface ProfilePoint {
 /**
  * Where the felt stops and the rail begins.
  *
- * Set from the game, not from taste: hole cards reach
- * `TABLE.radius - 0.17 + CARD_HEIGHT / 2` = 0.894, so the felt has to run past
- * that with a margin a card can be nudged into. The old torus rail happened to
- * have its inner edge at 0.94, which is where this lands too - the difference
- * is that it is now derived and checked instead of coincidental.
+ * Set from the game, not from taste. The binding constraint is not the hole
+ * cards, which reach 0.894 - it is the **deck**, which sits off to the
+ * button's left at `deckSpot` and whose far corner reaches 0.912. Every card
+ * of every hand starts its flight from there, so a rail that cleared the hole
+ * cards and nothing else would have the deck buried in the upholstery.
+ *
+ * The old torus rail had its inner edge at 0.94 by eye, which is where this
+ * lands too. The difference is that it is now derived from the anchors and
+ * checked against them, so the next art pass cannot quietly take it back.
  */
-export const FELT_RADIUS = 0.9;
+export const FELT_RADIUS = 0.934;
 
 /** Inner edge of the padded rail, just outside the felt. */
-export const RAIL_INNER = 0.912;
+export const RAIL_INNER = 0.94;
 
 /** Highest point of the padded rail, and the widest part of the table. */
 export const RAIL_CROWN_R = TABLE.radius;
@@ -59,8 +63,8 @@ export const RAIL_OUTER = 1.1;
  * The gold inlay: a hairline race between the felt and the rail, which is the
  * detail that reads as "premium" at a glance and costs one ring of triangles.
  */
-export const INLAY_INNER = 0.882;
-export const INLAY_OUTER = 0.9;
+export const INLAY_INNER = 0.916;
+export const INLAY_OUTER = FELT_RADIUS;
 
 /**
  * The neon race. Tucked under the lip of the rail, pointing down and out, so
@@ -75,11 +79,41 @@ export const NEON_Y = -0.052;
 export const NEON_TUBE = 0.009;
 
 /**
- * The padded rail, bottom to top.
+ * Which way a lathed surface faces, at the segment leaving `index`.
  *
- * Order matters: `LatheGeometry` derives its normals as `(dy, -dx)` along the
- * profile, so a profile that runs upward faces outward. Reversing this list
- * turns the table inside out.
+ * `LatheGeometry` does not derive normals from winding; it computes them along
+ * the profile as `(dy, -dx)`, which is the travel direction turned a quarter
+ * turn **clockwise** in the (r, y) plane. That makes the rule for authoring a
+ * profile exactly one sentence, and it is not the obvious one:
+ *
+ * > Traverse the cross-section **counter-clockwise** and the surface faces
+ * > outward.
+ *
+ * The obvious reading - "list the points bottom to top" - is right only for a
+ * profile that never turns over, like the apron or the pedestal. The rail
+ * turns over: it goes up the inside, across a crown, and down the outside. Run
+ * bottom-to-top through that and the crown ends up facing the floor, which
+ * looks like a table lit from underneath and is very hard to diagnose by eye.
+ * So the convention is a function, and `tableProfile.test.ts` asserts the sign
+ * of it at the crown and at the inner face rather than trusting the comment.
+ */
+export function profileNormal(
+  points: readonly ProfilePoint[],
+  index: number,
+): { r: number; y: number } {
+  const a = points[index]!;
+  const b = points[index + 1] ?? points[index]!;
+  const dr = b.r - a.r;
+  const dy = b.y - a.y;
+  const length = Math.hypot(dr, dy) || 1;
+  return { r: dy / length, y: -dr / length };
+}
+
+/**
+ * The padded rail, traversed counter-clockwise from the inner underside.
+ *
+ * Closed: the last point repeats the first, because a lathe does not join its
+ * own ends and an open ring shows a hollow edge from the seat opposite.
  *
  * The shape is a real card-room rail rather than a torus: it climbs from the
  * felt in a shallow curve, crowns where a forearm rests, and rolls over to a
@@ -88,19 +122,20 @@ export const NEON_TUBE = 0.009;
  */
 export function railProfile(): ProfilePoint[] {
   return [
-    // Underside of the rail, sunk just below the felt so no seam shows.
+    // Underside, out to the apron. Sunk just below the felt, so no seam shows.
     { r: RAIL_INNER, y: -0.012 },
-    { r: RAIL_INNER, y: 0.004 },
-    // The climb. Two intermediate points, because one gives a visible crease
-    // where the eye expects a roll.
-    { r: 0.941, y: 0.026 },
-    { r: 0.975, y: 0.05 },
-    { r: RAIL_CROWN_R, y: RAIL_CROWN_Y },
-    { r: 1.062, y: 0.056 },
-    { r: 1.09, y: 0.038 },
+    { r: RAIL_OUTER, y: -0.012 },
     // The outer lip, nearly vertical, where the leather is pulled under.
     { r: RAIL_OUTER, y: 0.014 },
-    { r: RAIL_OUTER, y: -0.012 },
+    { r: 1.09, y: 0.038 },
+    { r: 1.062, y: 0.056 },
+    { r: RAIL_CROWN_R, y: RAIL_CROWN_Y },
+    // The inner climb, seen from the felt. Two intermediate points, because
+    // one gives a visible crease where the eye expects a roll.
+    { r: 0.992, y: 0.051 },
+    { r: 0.962, y: 0.028 },
+    { r: RAIL_INNER, y: 0.004 },
+    { r: RAIL_INNER, y: -0.012 },
   ];
 }
 
@@ -146,6 +181,41 @@ export function pedestalProfile(): ProfilePoint[] {
     { r: 0.34, y: top - 0.01 },
     { r: 0.34, y: top },
   ];
+}
+
+/**
+ * The rail's inner slope at radius `r`: how high the leather is there, and how
+ * steeply it is climbing.
+ *
+ * The plaques in `SeatPlaques.tsx` are let into that slope, and "let into"
+ * means flush - a plate floating a centimetre above the leather reads as a
+ * sticker, and one a centimetre below is invisible. Interpolating the real
+ * profile is what keeps them flush if the rail is ever reshaped, which a
+ * hand-typed height would not.
+ *
+ * Only the inner run is searched, from the crown to the end of the profile:
+ * every radius between `RAIL_INNER` and the crown appears twice in a closed
+ * cross-section, once going out along the underside and once coming back over
+ * the top, and it is the top that a plate is set into.
+ */
+export function railSurfaceAt(r: number): { y: number; slope: number } {
+  const points = railProfile();
+  const crown = points.findIndex((p) => p.r === RAIL_CROWN_R);
+
+  for (let i = crown; i < points.length - 1; i++) {
+    const a = points[i]!;
+    const b = points[i + 1]!;
+    // The inner run descends in radius, so `a.r >= r >= b.r`.
+    if (r <= a.r && r >= b.r && a.r !== b.r) {
+      const t = (a.r - r) / (a.r - b.r);
+      return {
+        y: a.y + (b.y - a.y) * t,
+        // Positive: the surface rises as radius grows.
+        slope: Math.atan2(a.y - b.y, a.r - b.r),
+      };
+    }
+  }
+  return { y: RAIL_CROWN_Y, slope: 0 };
 }
 
 /** Triangles a profile costs at `segments` radial divisions. */

@@ -103,8 +103,28 @@ export interface HandState {
 
 export interface StartHandOptions {
   players: readonly { seat: number; playerId: string; stack: number }[];
-  /** Seat index holding the button. Moved on by `nextButton` between hands. */
+  /**
+   * Seat index holding the button.
+   *
+   * When `bigBlindSeat` is supplied this is taken literally, **including a
+   * seat nobody is sitting in**: a dead button is an ordinary position and
+   * `blinds.ts` is the thing entitled to decide it. When it is not, the button
+   * is moved onto a live seat and the blinds are read off it in order.
+   */
   button: number;
+  /**
+   * Who posts the small blind, or `null` for a dead small blind.
+   *
+   * Only read when `bigBlindSeat` is also supplied. See `blinds.ts` for why a
+   * blind nobody posts is a correct outcome rather than a missing one.
+   */
+  smallBlindSeat?: number | null;
+  /**
+   * Who posts the big blind. Supplying it hands the whole arrangement to the
+   * caller; omitting it falls back to button-plus-one, which is what the
+   * engine's own tests use because they never move anyone between hands.
+   */
+  bigBlindSeat?: number;
   smallBlind: number;
   bigBlind: number;
   handNumber: number;
@@ -492,11 +512,14 @@ export function startHand(options: StartHandOptions): HandState {
   }
 
   const order = dealt.map((p) => p.seat);
-  // A button on a seat that sat out lands on the next live seat rather than
-  // wedging the hand.
-  const button = order.includes(options.button)
-    ? options.button
-    : nextButton(order, options.button);
+  const arranged = options.bigBlindSeat !== undefined;
+  // Without an arrangement from `blinds.ts`, a button on a seat that sat out
+  // lands on the next live seat rather than wedging the hand. With one, it is
+  // left exactly where it was put, empty chair and all.
+  const button =
+    arranged || order.includes(options.button)
+      ? options.button
+      : nextButton(order, options.button);
 
   const state: HandState = {
     handNumber,
@@ -536,8 +559,22 @@ export function startHand(options: StartHandOptions): HandState {
   // so both arrangements have their own tests.
   const buttonIndex = order.indexOf(button);
   const headsUp = order.length === 2;
-  const sbSeat = order[(buttonIndex + (headsUp ? 0 : 1)) % order.length]!;
-  const bbSeat = order[(buttonIndex + (headsUp ? 1 : 2)) % order.length]!;
+  const sbSeat = arranged
+    ? (options.smallBlindSeat ?? null)
+    : order[(buttonIndex + (headsUp ? 0 : 1)) % order.length]!;
+  const bbSeat = arranged
+    ? options.bigBlindSeat!
+    : order[(buttonIndex + (headsUp ? 1 : 2)) % order.length]!;
+
+  if (!state.seats.has(bbSeat)) {
+    throw new Error(`big blind seat ${bbSeat} was not dealt into the hand`);
+  }
+  if (sbSeat !== null && !state.seats.has(sbSeat)) {
+    throw new Error(`small blind seat ${sbSeat} was not dealt into the hand`);
+  }
+  if (sbSeat === bbSeat) {
+    throw new Error(`seat ${bbSeat} cannot post both blinds`);
+  }
 
   // One card at a time around the table starting left of the button, as dealt
   // at a real table.
@@ -548,7 +585,9 @@ export function startHand(options: StartHandOptions): HandState {
     }
   }
 
-  commitChips(state.seats.get(sbSeat)!, smallBlind);
+  // A dead small blind is simply not posted. The pot is that much smaller and
+  // nothing else about the hand changes.
+  if (sbSeat !== null) commitChips(state.seats.get(sbSeat)!, smallBlind);
   commitChips(state.seats.get(bbSeat)!, bigBlind);
   // The amount to match is the full big blind even when the big blind could
   // not cover it. `amountToCall` caps what anyone actually owes.

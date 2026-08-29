@@ -66,6 +66,8 @@ export function clearHand(state: PokerStateInstance, players: PlayersBySeat) {
   state.minRaiseTo = 0;
   state.maxRaiseTo = 0;
   state.actingSeat = NO_SEAT;
+  state.smallBlindSeat = NO_SEAT;
+  state.bigBlindSeat = NO_SEAT;
 
   for (const player of players.values()) {
     player.bet = 0;
@@ -163,10 +165,18 @@ export function mirrorHand(
  * actually reached a showdown. A hand won on folds produces no reveals: the
  * winner never has to show, so those cards go straight back in the box.
  */
+/**
+ * @param names Display names of everyone dealt into this hand, captured at the
+ * deal. The map, not `players`, is what the summary reads: a player who left
+ * mid-hand while all-in still reaches the showdown and can still win, and a
+ * pot announced as won by nobody is worse than one announced as won by someone
+ * who has gone home.
+ */
 export function mirrorResult(
   state: PokerStateInstance,
   hand: HandState,
   players: PlayersBySeat,
+  names: ReadonlyMap<number, string> = new Map(),
 ) {
   const result = hand.result;
   if (!result) return;
@@ -189,14 +199,16 @@ export function mirrorResult(
 
   state.reveals.clear();
   for (const entry of result.showdown) {
-    // A player who left mid-hand while all-in still reaches the showdown in
-    // the engine, but has no seat here to publish it against. Their cards stay
-    // unpublished and their chips leave with them - see the stack-persistence
-    // note in README's phase 2 boundaries.
-    const player = seatedPlayer(players, hand.seats.get(entry.seat)!);
-    if (!player) continue;
+    // A seat that reached a showdown shows, whether or not its player is still
+    // here: cards at a showdown are public by definition, and a hand that was
+    // played out deserves to be seen. What a departed seat does *not* get is a
+    // `Player` written to - `seatedPlayer` returns undefined for it above and
+    // below, so no stack, status or card is ever written into whoever took the
+    // index next. Their chips still leave with them; see README phase 2.
+    const engineSeat = hand.seats.get(entry.seat)!;
+    const player = seatedPlayer(players, engineSeat);
     const reveal = new Reveal();
-    reveal.sessionId = player.sessionId;
+    reveal.sessionId = player?.sessionId ?? "";
     reveal.seat = entry.seat;
     for (const card of entry.hole) reveal.cards.push(cardToString(card));
     for (const card of entry.best) reveal.best.push(cardToString(card));
@@ -205,12 +217,12 @@ export function mirrorResult(
     state.reveals.push(reveal);
   }
 
-  const names = new Map<number, string>();
+  const named = new Map(names);
   for (const seat of hand.seats.values()) {
     const player = seatedPlayer(players, seat);
-    if (player) names.set(seat.seat, player.displayName);
+    if (player) named.set(seat.seat, player.displayName);
   }
-  state.lastResult = summarise(result.awards, result.showdown, names);
+  state.lastResult = summarise(result.awards, result.showdown, named);
 }
 
 function summarise(

@@ -132,6 +132,94 @@ function roundedCard(
   );
 }
 
+/**
+ * Where the pips go, per rank, as fractions of the card's inner panel.
+ *
+ * Standard English pattern, which matters more than it sounds: this is the
+ * arrangement everybody has been reading since childhood, so a five is
+ * recognised as a five without counting. An evenly spaced grid of five is not
+ * - it is a thing you have to count, and counting is exactly what a card at
+ * the far side of a table must not require.
+ *
+ * `x` is measured from the centre, `y` from the top of the panel down. A
+ * negative `y` means the pip is drawn upside down, as it is on the lower half
+ * of a real card, which is the detail that stops a ten looking like a printing
+ * error.
+ */
+const COLUMN = 0.26;
+const PIPS: Record<string, [number, number][]> = {
+  "2": [[0, 0.5], [0, -0.5]],
+  "3": [[0, 0.5], [0, 0], [0, -0.5]],
+  "4": [
+    [-COLUMN, 0.5],
+    [COLUMN, 0.5],
+    [-COLUMN, -0.5],
+    [COLUMN, -0.5],
+  ],
+  "5": [
+    [-COLUMN, 0.5],
+    [COLUMN, 0.5],
+    [0, 0],
+    [-COLUMN, -0.5],
+    [COLUMN, -0.5],
+  ],
+  "6": [
+    [-COLUMN, 0.5],
+    [COLUMN, 0.5],
+    [-COLUMN, 0],
+    [COLUMN, 0],
+    [-COLUMN, -0.5],
+    [COLUMN, -0.5],
+  ],
+  "7": [
+    [-COLUMN, 0.5],
+    [COLUMN, 0.5],
+    [0, 0.25],
+    [-COLUMN, 0],
+    [COLUMN, 0],
+    [-COLUMN, -0.5],
+    [COLUMN, -0.5],
+  ],
+  "8": [
+    [-COLUMN, 0.5],
+    [COLUMN, 0.5],
+    [0, 0.25],
+    [-COLUMN, 0],
+    [COLUMN, 0],
+    [0, -0.25],
+    [-COLUMN, -0.5],
+    [COLUMN, -0.5],
+  ],
+  "9": [
+    [-COLUMN, 0.5],
+    [COLUMN, 0.5],
+    [-COLUMN, 0.167],
+    [COLUMN, 0.167],
+    [0, 0],
+    [-COLUMN, -0.167],
+    [COLUMN, -0.167],
+    [-COLUMN, -0.5],
+    [COLUMN, -0.5],
+  ],
+  T: [
+    [-COLUMN, 0.5],
+    [COLUMN, 0.5],
+    [0, 0.333],
+    [-COLUMN, 0.167],
+    [COLUMN, 0.167],
+    [-COLUMN, -0.167],
+    [COLUMN, -0.167],
+    [0, -0.333],
+    [-COLUMN, -0.5],
+    [COLUMN, -0.5],
+  ],
+};
+
+/** The inner panel a pip layout is measured against. */
+const PANEL_TOP = 30;
+const PANEL_BOTTOM = CELL_HEIGHT - 30;
+const PIP_SIZE = 30;
+
 function drawFace(ctx: CanvasRenderingContext2D, slot: number): void {
   const [x, y] = cellOrigin(slot);
   const name = cardName(slot);
@@ -151,14 +239,32 @@ function drawFace(ctx: CanvasRenderingContext2D, slot: number): void {
 
   ctx.fillStyle = ink;
   ctx.textAlign = "center";
-
-  // The centre pip, big enough to read a suit across the table even when the
-  // corner index is too small to resolve.
-  ctx.font = "76px ui-sans-serif, system-ui, sans-serif";
   ctx.textBaseline = "middle";
-  ctx.globalAlpha = 0.17;
-  ctx.fillText(glyph, x + CELL_WIDTH / 2, y + CELL_HEIGHT / 2 + 6);
-  ctx.globalAlpha = 1;
+
+  const centreX = x + CELL_WIDTH / 2;
+  const middleY = y + (PANEL_TOP + PANEL_BOTTOM) / 2;
+  const halfPanel = (PANEL_BOTTOM - PANEL_TOP) / 2;
+
+  const pips = PIPS[rank];
+  if (pips) {
+    // A numbered card: the real pattern, at full strength.
+    ctx.font = `${PIP_SIZE}px ui-sans-serif, system-ui, sans-serif`;
+    for (const [px, py] of pips) {
+      const cx = centreX + px * CELL_WIDTH;
+      const cy = middleY - py * halfPanel;
+      ctx.save();
+      ctx.translate(cx, cy);
+      // Pips below the middle are printed inverted on a real card, which is
+      // what makes a hand read the same picked up either way up.
+      if (py < 0) ctx.rotate(Math.PI);
+      ctx.fillText(glyph, 0, 0);
+      ctx.restore();
+    }
+  } else {
+    // Ace, or a court card. Both get one big central device rather than a
+    // grid, which is also how they are told apart at a glance across a table.
+    drawCourt(ctx, x, y, rank, glyph, ink);
+  }
 
   // Corner index, top-left and bottom-right rotated, as on a real card, so a
   // card is readable whichever way up it is picked up.
@@ -181,6 +287,83 @@ function drawFace(ctx: CanvasRenderingContext2D, slot: number): void {
   corner(false);
   corner(true);
 
+  ctx.restore();
+}
+
+/**
+ * The five cards a pip grid cannot draw: A, J, Q, K.
+ *
+ * Not figures. A real court card is an engraving with a face, a costume and a
+ * mirrored half, and any attempt at one inside a 128x180 cell drawn with
+ * canvas primitives lands somewhere between crude and unreadable - while the
+ * job it has to do is only ever "this is a king, from two metres away, at an
+ * angle". So each gets a device instead: a large suit glyph inside a framed
+ * panel, with the rank letter over it for the courts. That reads instantly,
+ * scales down cleanly, and is honest about being a stylised deck rather than
+ * a bad imitation of a real one.
+ *
+ * The ace is the exception a real deck also makes: one enormous pip, no letter.
+ */
+function drawCourt(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  rank: string,
+  glyph: string,
+  ink: string,
+): void {
+  const centreX = x + CELL_WIDTH / 2;
+  const centreY = y + CELL_HEIGHT / 2;
+
+  if (rank === "A") {
+    ctx.font = "82px ui-sans-serif, system-ui, sans-serif";
+    ctx.fillText(glyph, centreX, centreY + 4);
+    return;
+  }
+
+  // The frame: a double rule in the suit's own ink, which is what makes a
+  // court card read as a court card before any letter is resolved.
+  const panelWidth = 74;
+  const panelHeight = 104;
+  ctx.save();
+  ctx.strokeStyle = ink;
+  ctx.globalAlpha = 0.55;
+  ctx.lineWidth = 3;
+  ctx.strokeRect(
+    centreX - panelWidth / 2,
+    centreY - panelHeight / 2,
+    panelWidth,
+    panelHeight,
+  );
+  ctx.globalAlpha = 0.3;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(
+    centreX - panelWidth / 2 + 6,
+    centreY - panelHeight / 2 + 6,
+    panelWidth - 12,
+    panelHeight - 12,
+  );
+  ctx.restore();
+
+  // Suit behind, letter in front. The glyph is knocked back so the letter
+  // stays the thing the eye lands on.
+  ctx.save();
+  ctx.globalAlpha = 0.24;
+  ctx.font = "78px ui-sans-serif, system-ui, sans-serif";
+  ctx.fillText(glyph, centreX, centreY + 4);
+  ctx.restore();
+
+  ctx.font = "bold 56px ui-sans-serif, system-ui, sans-serif";
+  ctx.fillText(rank, centreX, centreY + 3);
+
+  // A pip in two opposite corners of the panel, mirrored, standing in for the
+  // rotational symmetry a real engraving has.
+  ctx.save();
+  ctx.font = "20px ui-sans-serif, system-ui, sans-serif";
+  ctx.fillText(glyph, centreX - panelWidth / 2 + 15, centreY - panelHeight / 2 + 16);
+  ctx.translate(centreX + panelWidth / 2 - 15, centreY + panelHeight / 2 - 16);
+  ctx.rotate(Math.PI);
+  ctx.fillText(glyph, 0, 0);
   ctx.restore();
 }
 

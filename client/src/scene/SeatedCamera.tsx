@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import {
@@ -7,6 +7,14 @@ import {
   MAX_LOOK_YAW,
   type Seat,
 } from "./layout.js";
+import {
+  KEY_PITCH_SPEED,
+  KEY_YAW_SPEED,
+  NO_LOOK_AXES,
+  keyLookScale,
+  stepLookOffset,
+  type LookAxes,
+} from "./keyboardLook.js";
 import { DEFAULT_SENSITIVITY, lookResponse } from "./lookCurve.js";
 import { dampAngle } from "./damp.js";
 
@@ -28,6 +36,12 @@ import { dampAngle } from "./damp.js";
  *
  * The look can also be released entirely, which is what lets a settings
  * overlay hand the cursor back without the view following it around.
+ *
+ * W, A, S and D turn the head too, and they *add* to the cursor rather than
+ * taking over from it: there is no mode and nothing to switch between. All of
+ * the arithmetic, including the anti-windup that makes holding a key against
+ * the edge of the arc cost nothing, is in `keyboardLook.ts` where it can be
+ * tested without a renderer.
  */
 
 /** Bigger is snappier. Around 4 is "attentive person", 10 is "machine". */
@@ -54,12 +68,21 @@ export interface SeatedCameraProps {
   lookEnabled: boolean;
   /** 0..1. Reshapes the response curve, never the reachable arc. */
   sensitivity: number;
+  /**
+   * Which way the held look keys are pushing, updated outside React.
+   *
+   * A ref because it is read once per frame and must never cause a render;
+   * optional because the scene is perfectly usable on the cursor alone, and a
+   * test or a screenshot rig should not have to fake a keyboard.
+   */
+  lookKeys?: RefObject<LookAxes> | undefined;
 }
 
 export function SeatedCamera({
   seat,
   lookEnabled,
   sensitivity = DEFAULT_SENSITIVITY,
+  lookKeys,
 }: SeatedCameraProps) {
   const camera = useThree((s) => s.camera);
   const domElement = useThree((s) => s.gl.domElement);
@@ -68,6 +91,10 @@ export function SeatedCamera({
   // re-rendering the scene graph at that rate is the whole thing to avoid.
   const target = useRef({ yaw: 0, pitch: 0 });
   const current = useRef({ yaw: 0, pitch: 0 });
+  // What the keys have added on top of wherever the cursor is pointing. Kept
+  // apart from `target` so a pointer move does not wipe it out, and so it can
+  // be clamped against the composed angle rather than on its own.
+  const keyOffset = useRef({ yaw: 0, pitch: 0 });
 
   // Where the seat itself is, kept apart from the look and the sway so the
   // idle bob never feeds back into the damping.
@@ -111,6 +138,33 @@ export function SeatedCamera({
   useFrame((state, delta) => {
     const t = state.clock.elapsedTime;
 
+    // Keys first, so the damping below eases towards an angle that already
+    // includes them. Released along with the cursor when an overlay is up:
+    // the head holds where it was left rather than drifting behind a menu.
+    const axes = (lookEnabled ? lookKeys?.current : null) ?? NO_LOOK_AXES;
+    const scale = keyLookScale(sensitivity);
+    keyOffset.current.yaw = stepLookOffset(
+      keyOffset.current.yaw,
+      axes.yaw,
+      KEY_YAW_SPEED * scale,
+      delta,
+      target.current.yaw,
+      -MAX_LOOK_YAW,
+      MAX_LOOK_YAW,
+    );
+    keyOffset.current.pitch = stepLookOffset(
+      keyOffset.current.pitch,
+      axes.pitch,
+      KEY_PITCH_SPEED * scale,
+      delta,
+      target.current.pitch,
+      -MAX_LOOK_PITCH_DOWN,
+      MAX_LOOK_PITCH_UP,
+    );
+
+    const wantYaw = target.current.yaw + keyOffset.current.yaw;
+    const wantPitch = target.current.pitch + keyOffset.current.pitch;
+
     // Ease to the seat when the table re-flows around a new arrival, rather
     // than cutting, which at first person reads as being teleported.
     if (!seated.current) {
@@ -139,13 +193,13 @@ export function SeatedCamera({
 
     current.current.yaw = THREE.MathUtils.damp(
       current.current.yaw,
-      target.current.yaw,
+      wantYaw,
       LOOK_LAMBDA,
       delta,
     );
     current.current.pitch = THREE.MathUtils.damp(
       current.current.pitch,
-      target.current.pitch,
+      wantPitch,
       LOOK_LAMBDA,
       delta,
     );

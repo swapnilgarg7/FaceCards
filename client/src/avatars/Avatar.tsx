@@ -20,9 +20,12 @@ import {
   TORSO_RADIUS,
   bodyGeometry,
 } from "../scene/body.js";
+import { HALO_SCALE } from "../scene/decor.js";
 import { faceCrop } from "../scene/faceCrop.js";
 import { avatarLook } from "./archetypes.js";
+import { AT_REST, idlePose } from "./idle.js";
 import { HeadPieceMesh } from "./HeadPiece.js";
+import { OutfitMesh } from "./Outfit.js";
 import { DEFAULT_SMOOTHING, stepFraming } from "../scene/faceSmooth.js";
 import { useFaceTexture } from "./useFaceTexture.js";
 import {
@@ -35,16 +38,26 @@ import {
 /**
  * A seated player: torso-up stylised body with a live face on the head.
  *
- * Deliberately procedural. Phase 5 swaps the primitives for the Quaternius
- * modular bodies, and the only contract that has to survive that swap is the
- * face-plane socket: a plane of `FACE_PLANE_*` dimensions, centred at the
- * seat's eye height, facing the seat's forward. Everything else here is
- * placeholder geometry.
+ * Deliberately procedural, and phase 5 kept it that way rather than swapping in
+ * the Quaternius modular bodies. The reason is the socket: everything about
+ * these bodies is derived from `EYE_HEIGHT` through `body.ts`, which is what
+ * makes a face plane land on a neck instead of floating over one. A downloaded
+ * rig arrives with its own proportions and its own idea of where a head is, so
+ * adopting one means re-deriving that relationship against a mesh nobody can
+ * edit - to gain skinned shoulders on a body that is visible from the chest up
+ * and mostly in shadow.
  *
- * Which body you get is the archetype you chose in the lobby, resolved through
- * `archetypes.ts`. The socket does not know or care which one it is on, which
- * is the entire point of routing it through one lookup: the webcam binding is
- * archetype-agnostic today and has to stay that way once these are meshes.
+ * What phase 5 added instead is the two things the plan actually wanted out of
+ * that swap. **Personality**: every archetype now sits differently, from
+ * `idle.ts`, bounded so a sway can never take a face out of frame.
+ * **Silhouette**: every archetype now wears something that changes its
+ * outline, from `Outfit.tsx`. Six people should be tellable apart with the
+ * sound off and three cameras dark.
+ *
+ * The contract that has to survive any future swap is unchanged: a plane of
+ * `FACE_PLANE_*` dimensions, centred at the seat's eye height, facing the
+ * seat's forward. The socket does not know or care which body it is on, which
+ * is the entire point of routing it through one lookup.
  */
 
 /**
@@ -84,6 +97,17 @@ const RESEAT_LAMBDA = 3.4;
  * badge nobody would be looking at.
  */
 const AWAY_COLOUR = "#3a3f48";
+
+/**
+ * Where a seated body bends: hip height, not the floor.
+ *
+ * The seat's origin is on the carpet, so rolling the body about it would swing
+ * the head through an arc a metre and a bit long - six centimetres sideways
+ * for the two degrees `idle.ts` allows. Pivoting here puts the head about
+ * two thirds of a metre out instead, which is what a person shifting their
+ * weight in a chair actually looks like.
+ */
+const PIVOT_Y = 0.5;
 
 export interface AvatarProps {
   seat: Seat;
@@ -141,6 +165,10 @@ export function Avatar({
   const body = useMemo(() => bodyGeometry(seat.eyeY), [seat.eyeY]);
 
   const rootRef = useRef<THREE.Group>(null);
+  /** Everything above the seat: swayed and leaned as one, so a body bends. */
+  const poseRef = useRef<THREE.Group>(null);
+  /** The head and the face plane it carries. Glances on top of the sway. */
+  const headRef = useRef<THREE.Group>(null);
   const torsoRef = useRef<THREE.Mesh>(null);
   const ringRef = useRef<THREE.MeshBasicMaterial>(null);
   const seated = useRef(false);
@@ -180,6 +208,27 @@ export function Avatar({
           delta,
         );
       }
+    }
+
+    // The idle. Pure function of time and archetype, so six clients draw the
+    // same six people without a byte on the wire - and bounded in `idle.ts`,
+    // where the amplitudes are asserted, because the failure mode here is a
+    // body that takes a face with it.
+    //
+    // A dropped player stops dead rather than easing to a halt: the seat is
+    // still theirs, but a body that is still breathing says somebody is in it.
+    const pose = away ? AT_REST : idlePose(state.clock.elapsedTime, look.idle, phase);
+
+    const posed = poseRef.current;
+    if (posed) {
+      posed.rotation.z = pose.roll;
+      posed.rotation.x = pose.pitch;
+      posed.position.y = pose.rise;
+    }
+    const head = headRef.current;
+    if (head) {
+      head.rotation.y = pose.headYaw;
+      head.rotation.x = pose.headPitch;
     }
 
     // Breathing. Mutating the ref rather than setting state, because state
@@ -244,145 +293,193 @@ export function Avatar({
 
   return (
     <group ref={rootRef}>
-      <mesh
-        ref={torsoRef}
-        position={[0, body.torsoY, 0]}
-        scale={[1, 1, TORSO_DEPTH]}
-        castShadow
-      >
-        <capsuleGeometry args={[TORSO_RADIUS, TORSO_LENGTH, 4, 12]} />
-        <meshStandardMaterial color={colour} roughness={0.72} />
-      </mesh>
-
       {/*
-        The neck. Without one the head is a ball resting on a shoulder, and
-        the gap the face plane needs in order to show a chin reads as a
-        floating head instead of a person.
+        Three nested groups so that a sway pivots at the hips rather than at
+        the floor. `poseRef` carries the roll, the lean and the breath rise;
+        the pair around it move the pivot up to `PIVOT_Y` and back down, which
+        is what lets every child below keep the absolute heights `body.ts`
+        derived. Rolling about the seat origin instead would swing a head
+        through six centimetres for a two-degree shift of weight.
       */}
-      <mesh position={[0, body.neckY, 0]} castShadow>
-        <cylinderGeometry
-          args={[NECK_RADIUS_TOP, NECK_RADIUS_BOTTOM, body.neckHeight, 12]}
-        />
-        <meshStandardMaterial color={headColour} roughness={0.85} />
-      </mesh>
+      <group position={[0, PIVOT_Y, 0]}>
+        <group ref={poseRef}>
+          <group position={[0, -PIVOT_Y, 0]}>
+            <mesh
+              ref={torsoRef}
+              position={[0, body.torsoY, 0]}
+              scale={[1, 1, TORSO_DEPTH]}
+              castShadow
+            >
+              <capsuleGeometry args={[TORSO_RADIUS, TORSO_LENGTH, 4, 12]} />
+              <meshStandardMaterial color={colour} roughness={0.72} />
+            </mesh>
 
-      <mesh position={[0, seat.eyeY, 0]} scale={look.headScale} castShadow>
-        <sphereGeometry args={[HEAD_RADIUS, 18, 14]} />
-        <meshStandardMaterial color={headColour} roughness={0.85} />
-      </mesh>
+            {/*
+              The neck. Without one the head is a ball resting on a shoulder,
+              and the gap the face plane needs in order to show a chin reads as
+              a floating head instead of a person.
+            */}
+            <mesh position={[0, body.neckY, 0]} castShadow>
+              <cylinderGeometry
+                args={[NECK_RADIUS_TOP, NECK_RADIUS_BOTTOM, body.neckHeight, 12]}
+              />
+              <meshStandardMaterial color={headColour} roughness={0.85} />
+            </mesh>
 
-      {/* Hat, antennae or fin. Above the skull or behind it, never across the
-          face plane - see the socket contract in `archetypes.ts`. */}
-      <HeadPieceMesh
-        piece={look.headPiece}
-        headTopY={seat.eyeY + HEAD_RADIUS * look.headScale[1]}
-        colour={colour}
-        accent={away ? AWAY_COLOUR : look.accent}
-      />
+            {/*
+              The head, on its own pivot at the eye-line, by the same
+              move-and-move-back. A glance turns the skull, the hat and the
+              face plane together, because from the neck up they are one thing.
+            */}
+            <group position={[0, seat.eyeY, 0]}>
+              <group ref={headRef}>
+                <group position={[0, -seat.eyeY, 0]}>
+                  <mesh
+                    position={[0, seat.eyeY, 0]}
+                    scale={look.headScale}
+                    castShadow
+                  >
+                    <sphereGeometry args={[HEAD_RADIUS, 18, 14]} />
+                    <meshStandardMaterial color={headColour} roughness={0.85} />
+                  </mesh>
 
-      {/*
-        A three.js object faces its local -Z, so everything inside this group
-        is authored facing the viewer and the group turns it around. Rotating
-        the whole group also carries its UVs, so this introduces no mirroring
-        of its own: all mirroring lives in the crop.
-      */}
-      <group rotation-y={Math.PI}>
-        <mesh position={[0, seat.eyeY, FACE_INSET - 0.012]}>
-          <planeGeometry
-            args={[FACE_PLANE_WIDTH * 1.28, FACE_PLANE_HEIGHT * 1.24]}
-          />
-          <meshBasicMaterial
-            ref={ringRef}
-            color="#ffd479"
-            alphaMap={ringMask}
-            transparent
-            opacity={0}
-            depthWrite={false}
-            toneMapped={false}
-          />
-        </mesh>
+                  {/* Hat, antennae or fin. Above the skull or behind it, never
+                      across the face plane - see the socket contract in
+                      `archetypes.ts`. */}
+                  <HeadPieceMesh
+                    piece={look.headPiece}
+                    headTopY={seat.eyeY + HEAD_RADIUS * look.headScale[1]}
+                    colour={colour}
+                    accent={away ? AWAY_COLOUR : look.accent}
+                  />
 
-        <mesh
-          position={[0, seat.eyeY, FACE_INSET]}
-          rotation-x={FACE_PITCH}
-          renderOrder={1}
-        >
-          <planeGeometry args={[FACE_PLANE_WIDTH, FACE_PLANE_HEIGHT]} />
-          {showVideo ? (
-            // Basic, not standard: the frame already carries the light of the
-            // room the person is sitting in, and tone mapping a face is what
-            // makes skin look grey.
-            <meshBasicMaterial
-              map={faceTexture}
-              alphaMap={faceMask}
-              transparent
-              depthWrite={false}
-              toneMapped={false}
-            />
-          ) : (
-            <meshStandardMaterial
-              color={colour}
-              emissive={colour}
-              emissiveIntensity={0.12}
-              alphaMap={faceMask}
-              transparent
-              depthWrite={false}
-              roughness={0.9}
-            />
-          )}
-        </mesh>
+                  {/*
+                    A three.js object faces its local -Z, so everything inside
+                    this group is authored facing the viewer and the group
+                    turns it around. Rotating the whole group also carries its
+                    UVs, so this introduces no mirroring of its own: all
+                    mirroring lives in the crop.
+                  */}
+                  <group rotation-y={Math.PI}>
+                    <mesh position={[0, seat.eyeY, FACE_INSET - 0.012]}>
+                      <planeGeometry
+                        args={[
+                          FACE_PLANE_WIDTH * HALO_SCALE,
+                          FACE_PLANE_HEIGHT * HALO_SCALE,
+                        ]}
+                      />
+                      <meshBasicMaterial
+                        ref={ringRef}
+                        color="#ffd479"
+                        alphaMap={ringMask}
+                        transparent
+                        opacity={0}
+                        depthWrite={false}
+                        toneMapped={false}
+                      />
+                    </mesh>
 
-        {look.tie && (
-          // Business dress. Inside the flipped group, so +Z is the direction
-          // this player faces, which is where a tie hangs.
-          <mesh
-            position={[0, body.shoulderY - 0.15, body.chestFrontZ * 0.94]}
-            castShadow
-          >
-            <boxGeometry args={[0.038, 0.17, 0.02]} />
-            <meshStandardMaterial
-              color={away ? AWAY_COLOUR : look.accent}
-              roughness={0.6}
-            />
-          </mesh>
-        )}
+                    <mesh
+                      position={[0, seat.eyeY, FACE_INSET]}
+                      rotation-x={FACE_PITCH}
+                      renderOrder={1}
+                    >
+                      <planeGeometry
+                        args={[FACE_PLANE_WIDTH, FACE_PLANE_HEIGHT]}
+                      />
+                      {showVideo ? (
+                        // Basic, not standard: the frame already carries the
+                        // light of the room the person is sitting in, and tone
+                        // mapping a face is what makes skin look grey.
+                        <meshBasicMaterial
+                          map={faceTexture}
+                          alphaMap={faceMask}
+                          transparent
+                          depthWrite={false}
+                          toneMapped={false}
+                        />
+                      ) : (
+                        <meshStandardMaterial
+                          color={colour}
+                          emissive={colour}
+                          emissiveIntensity={0.12}
+                          alphaMap={faceMask}
+                          transparent
+                          depthWrite={false}
+                          roughness={0.9}
+                        />
+                      )}
+                    </mesh>
+                  </group>
+                </group>
+              </group>
+            </group>
 
-        <mesh position={[0, NAME_PLATE_Y, 0.24]}>
-          <planeGeometry
-            args={[NAME_PLATE_HEIGHT * plate.aspect, NAME_PLATE_HEIGHT]}
-          />
-          <meshBasicMaterial
-            map={plate.texture}
-            transparent
-            depthWrite={false}
-            toneMapped={false}
-          />
-        </mesh>
+            {/* Everything worn or written on the body. Outside the head pivot,
+                because a name plate that turned with a glance would read as a
+                badge swinging on a hook. */}
+            <group rotation-y={Math.PI}>
+              <OutfitMesh
+                outfit={look.outfit}
+                body={body}
+                colour={colour}
+                accent={away ? AWAY_COLOUR : look.accent}
+              />
 
-        {micMuted && (
-          // Spec section 7: the mute state belongs on the avatar, near the
-          // chest, not only in a HUD nobody is looking at. It rides beside
-          // the name plate, which is what now marks chest height.
-          <mesh
-            position={[
-              -(
-                (NAME_PLATE_HEIGHT * plate.aspect) / 2 +
-                MUTE_GLYPH_GAP +
-                MUTE_GLYPH_SIZE / 2
-              ),
-              NAME_PLATE_Y,
-              0.24,
-            ]}
-          >
-            <planeGeometry args={[MUTE_GLYPH_SIZE, MUTE_GLYPH_SIZE]} />
-            <meshBasicMaterial
-              map={muteGlyphTexture()}
-              transparent
-              depthWrite={false}
-              toneMapped={false}
-            />
-          </mesh>
-        )}
+              {look.tie && (
+                // Business dress. Inside the flipped group, so +Z is the
+                // direction this player faces, which is where a tie hangs.
+                <mesh
+                  position={[0, body.shoulderY - 0.15, body.chestFrontZ * 0.94]}
+                  castShadow
+                >
+                  <boxGeometry args={[0.038, 0.17, 0.02]} />
+                  <meshStandardMaterial
+                    color={away ? AWAY_COLOUR : look.accent}
+                    roughness={0.6}
+                  />
+                </mesh>
+              )}
+
+              <mesh position={[0, NAME_PLATE_Y, 0.24]}>
+                <planeGeometry
+                  args={[NAME_PLATE_HEIGHT * plate.aspect, NAME_PLATE_HEIGHT]}
+                />
+                <meshBasicMaterial
+                  map={plate.texture}
+                  transparent
+                  depthWrite={false}
+                  toneMapped={false}
+                />
+              </mesh>
+
+              {micMuted && (
+                // Spec section 7: the mute state belongs on the avatar, near
+                // the chest, not only in a HUD nobody is looking at. It rides
+                // beside the name plate, which is what now marks chest height.
+                <mesh
+                  position={[
+                    -(
+                      (NAME_PLATE_HEIGHT * plate.aspect) / 2 +
+                      MUTE_GLYPH_GAP +
+                      MUTE_GLYPH_SIZE / 2
+                    ),
+                    NAME_PLATE_Y,
+                    0.24,
+                  ]}
+                >
+                  <planeGeometry args={[MUTE_GLYPH_SIZE, MUTE_GLYPH_SIZE]} />
+                  <meshBasicMaterial
+                    map={muteGlyphTexture()}
+                    transparent
+                    depthWrite={false}
+                    toneMapped={false}
+                  />
+                </mesh>
+              )}
+            </group>
+          </group>
+        </group>
       </group>
     </group>
   );

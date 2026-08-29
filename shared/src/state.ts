@@ -70,6 +70,38 @@ export const Player = schema(
 
     /** Chips behind. Server-owned; a client-supplied balance is never read. */
     stack: "uint32",
+    /**
+     * Every chip this seat has brought to the table, the opening stake
+     * included.
+     *
+     * Public, and deliberately so: at a real table everyone watches everyone
+     * else reach for their wallet, and a leaderboard that showed only the
+     * stack in front of a seat would call the player who has rebought four
+     * times the one who is winning. Stack minus this is the only honest score.
+     */
+    totalBuyIn: "uint32",
+    /**
+     * Chips bought while this seat was in a hand, waiting to be pushed across
+     * at the end of it.
+     *
+     * Table stakes: you play a hand with the chips you had when it was dealt,
+     * so a buy-in taken mid-hand is held here and applied before the next
+     * deal. Public, because everyone can see the chips arrive.
+     */
+    pendingBuyIn: "uint32",
+    /** Hands this seat has been dealt into. Display only. */
+    handsPlayed: "uint32",
+    /** Hands this seat took at least one chip out of. Display only. */
+    handsWon: "uint32",
+    /**
+     * This seat has to wait for the big blind before it is dealt in again.
+     *
+     * Set when someone takes a seat at a table already running, comes back
+     * from sitting out, or rebuys after busting. Cleared the moment the blind
+     * reaches them. It is what stops a seat from stepping in just past the
+     * blinds, folding round, and stepping out again before paying any.
+     */
+    owesBlind: "boolean",
     /** Chips in front of this seat for the current betting round. */
     bet: "uint32",
     /** One of `SeatStatus`. */
@@ -196,6 +228,17 @@ export const PokerState = schema(
     turn: "uint32",
     /** Seat holding the button, or -1 before the first hand. */
     buttonSeat: "int8",
+    /**
+     * Seat that posted the small blind, or -1 for a *dead* small blind.
+     *
+     * A dead small blind is a real outcome, not an error: when the player who
+     * owed it left the table between hands, the blind moves on without them
+     * and nobody posts it. Published so the table can say so rather than
+     * leaving the pot looking five chips light.
+     */
+    smallBlindSeat: "int8",
+    /** Seat that posted the big blind, or -1 between hands. */
+    bigBlindSeat: "int8",
 
     smallBlind: "uint32",
     bigBlind: "uint32",

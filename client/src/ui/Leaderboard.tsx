@@ -1,0 +1,299 @@
+import { useEffect, useState } from "react";
+import {
+  DEFAULT_BUY_IN,
+  MAX_STACK,
+  maxBuyIn,
+  minBuyIn,
+} from "@facecards/shared";
+import type { RoomSnapshot, SeatSnapshot } from "../net/useRoom.js";
+import {
+  contestedChips,
+  isInHand,
+  leaderboard,
+  type LeaderboardRow,
+  type SeatNote,
+} from "./standings.js";
+
+/**
+ * Who is up, who is down, and what it cost them.
+ *
+ * The HUD is otherwise kept deliberately thin - everything it could say about
+ * a player is already on their face - so this earns its place by being the one
+ * thing the table genuinely cannot show. A pile of chips says how deep someone
+ * is *now*. It cannot say that the pile is their third, and the difference
+ * between "winning" and "has rebought twice" is most of what people actually
+ * want to know at a poker night.
+ *
+ * Hence three columns rather than one: what they have put in, what they have
+ * in front of them, and the only number that is really the score. See
+ * `standings.ts` for why profit is measured off the stack and nothing else.
+ *
+ * The buy-in control lives at the bottom of the same panel, because reaching
+ * for more chips is the action the numbers above it provoke.
+ */
+
+const NOTE_LABELS: Record<SeatNote, string> = {
+  away: "reconnecting",
+  "all-in": "all in",
+  folded: "folded",
+  "buying-in": "chips coming",
+  busted: "out of chips",
+  "sitting-out": "sitting out",
+  "waiting-for-blind": "waiting for the blind",
+  playing: "",
+};
+
+function chips(value: number): string {
+  return value.toLocaleString();
+}
+
+function signed(value: number): string {
+  return value > 0 ? `+${chips(value)}` : chips(value);
+}
+
+export function Leaderboard({
+  snapshot,
+  sessionId,
+  me,
+  onBuyIn,
+}: {
+  snapshot: RoomSnapshot;
+  sessionId: string | null;
+  me: SeatSnapshot | undefined;
+  onBuyIn(amount: number): void;
+}) {
+  const rows = leaderboard(snapshot, sessionId);
+  const felt = contestedChips(snapshot);
+
+  return (
+    <aside className="board" aria-label="Standings">
+      <header className="board__head">
+        <h2>Standings</h2>
+        {snapshot.handNumber > 0 && (
+          <span className="board__hand">Hand {snapshot.handNumber}</span>
+        )}
+      </header>
+
+      <div className="board__cols" aria-hidden="true">
+        <span className="board__who">Player</span>
+        <span className="board__num">Bought</span>
+        <span className="board__num">Chips</span>
+        <span className="board__num">+/-</span>
+      </div>
+
+      <ol className="board__rows">
+        {rows.map((row) => (
+          <Row key={row.sessionId} row={row} />
+        ))}
+      </ol>
+
+      {felt > 0 && (
+        <p className="board__felt">
+          {/* Everything the columns above deliberately do not count. Without
+              it the chips column reads short mid-hand for no visible reason. */}
+          <span>In the pot</span>
+          <b>{chips(felt)}</b>
+        </p>
+      )}
+
+      <BuyIn snapshot={snapshot} me={me} onBuyIn={onBuyIn} />
+    </aside>
+  );
+}
+
+function Row({ row }: { row: LeaderboardRow }) {
+  const note = NOTE_LABELS[row.note];
+  const classes = [
+    "board__row",
+    row.isMe ? "board__row--me" : "",
+    row.acting ? "board__row--acting" : "",
+    row.note === "away" ? "board__row--away" : "",
+    row.note === "busted" ? "board__row--busted" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return (
+    <li className={classes}>
+      <span className="board__who">
+        <span className="board__rank">{row.rank}</span>
+        <span className="board__name">
+          {row.displayName}
+          {row.isMe && <span className="board__you">you</span>}
+          {row.onButton && (
+            <span className="hand__button" title="dealer button">
+              D
+            </span>
+          )}
+          {row.blind && (
+            <span
+              className="board__blind"
+              title={row.blind === "SB" ? "small blind" : "big blind"}
+            >
+              {row.blind}
+            </span>
+          )}
+        </span>
+        {/* One line, and a showdown outranks everything else that could go on
+            it: what someone just turned over is the thing being talked about. */}
+        {row.reveal ? (
+          <span className="board__note board__note--reveal">
+            {row.reveal.description}
+            {row.reveal.won > 0 && <b> +{chips(row.reveal.won)}</b>}
+          </span>
+        ) : (
+          (note || row.handsPlayed > 0) && (
+            <span className="board__note">
+              {note}
+              {note && row.handsPlayed > 0 && " · "}
+              {row.handsPlayed > 0 &&
+                `won ${row.handsWon} of ${row.handsPlayed}`}
+            </span>
+          )
+        )}
+      </span>
+
+      <span className="board__num">{chips(row.buyIn)}</span>
+
+      <span className="board__num">
+        {chips(row.chips)}
+        {/* Both are chips that are theirs but not in the stack, and both would
+            otherwise make the column look wrong. */}
+        {row.committed > 0 && (
+          <small className="board__aside">+{chips(row.committed)} out</small>
+        )}
+        {row.pending > 0 && (
+          <small className="board__aside">+{chips(row.pending)} coming</small>
+        )}
+      </span>
+
+      <span
+        className={`board__num board__profit${
+          row.profit > 0 ? " board__profit--up" : ""
+        }${row.profit < 0 ? " board__profit--down" : ""}`}
+      >
+        {signed(row.profit)}
+      </span>
+    </li>
+  );
+}
+
+/**
+ * Putting more chips behind your seat.
+ *
+ * Every amount this can send is one the server would accept, because the
+ * bounds come from `shared/src/buyIn.ts` - the same module the server checks
+ * against. That is a courtesy, not a control: the server re-derives all of it
+ * and a refusal comes back through the same rejection path as an illegal bet.
+ *
+ * The wording is the only place the client guesses at anything. A seat in a
+ * live hand is told its chips arrive after it, because table stakes says they
+ * do; if the guess is ever wrong the chips simply arrive sooner.
+ */
+function BuyIn({
+  snapshot,
+  me,
+  onBuyIn,
+}: {
+  snapshot: RoomSnapshot;
+  me: SeatSnapshot | undefined;
+  onBuyIn(amount: number): void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const context = { stack: me?.stack ?? 0, pending: me?.pendingBuyIn ?? 0 };
+  const min = minBuyIn(context);
+  const max = maxBuyIn(context);
+  const busted = !!me && me.stack === 0 && me.pendingBuyIn === 0;
+  const waits = isInHand(snapshot, me);
+
+  const suggested = Math.min(max, Math.max(min, DEFAULT_BUY_IN));
+  const [amount, setAmount] = useState(suggested);
+
+  // Follow the bounds as chips are won, lost and delivered, so the control
+  // never sits on a number that has since become illegal.
+  useEffect(() => {
+    setAmount((value) => Math.min(max, Math.max(min, value || suggested)));
+  }, [min, max, suggested]);
+
+  if (!me) return null;
+
+  if (max === 0) {
+    return (
+      <p className="board__buyin board__buyin--note">
+        You are at the table maximum of {chips(MAX_STACK)}.
+      </p>
+    );
+  }
+
+  if (!open) {
+    return (
+      <div className={`board__buyin${busted ? " board__buyin--urgent" : ""}`}>
+        {busted && (
+          <p className="board__buyin-lede">
+            You are out of chips. Your seat is still yours.
+          </p>
+        )}
+        {me.pendingBuyIn > 0 && (
+          <p className="board__buyin-lede">
+            {chips(me.pendingBuyIn)} arriving at the next deal.
+          </p>
+        )}
+        <button
+          className={`btn${busted ? " btn--primary" : ""}`}
+          onClick={() => setOpen(true)}
+        >
+          {busted ? "Buy back in" : "Add chips"}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="board__buyin board__buyin--open">
+      <label className="board__buyin-slider">
+        <span>Buy in for</span>
+        <b>{chips(amount)}</b>
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={1}
+          value={amount}
+          aria-label="buy-in amount"
+          onChange={(event) => setAmount(Number(event.target.value))}
+        />
+      </label>
+
+      <div className="board__buyin-row">
+        <button className="btn btn--ghost" onClick={() => setAmount(min)}>
+          Min {chips(min)}
+        </button>
+        <button className="btn btn--ghost" onClick={() => setAmount(max)}>
+          Max {chips(max)}
+        </button>
+      </div>
+
+      <div className="board__buyin-row">
+        <button
+          className="btn btn--primary"
+          onClick={() => {
+            onBuyIn(amount);
+            setOpen(false);
+          }}
+        >
+          Buy in
+        </button>
+        <button className="btn btn--ghost" onClick={() => setOpen(false)}>
+          Cancel
+        </button>
+      </div>
+
+      <p className="note">
+        {waits
+          ? "You are in this hand, so the chips join your stack when it ends. You play it out with what you started it with."
+          : "The chips are behind your seat straight away."}
+      </p>
+    </div>
+  );
+}

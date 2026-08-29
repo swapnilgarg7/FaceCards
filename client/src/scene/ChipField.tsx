@@ -16,6 +16,7 @@ import {
 } from "./chips.js";
 import { assignChips, type ChipInstance, type ChipSlot } from "./chipPool.js";
 import { damp } from "./damp.js";
+import { chipGeometry, chipTexture } from "./surfaces.js";
 import type { Seat } from "./layout.js";
 
 /**
@@ -44,6 +45,13 @@ import type { Seat } from "./layout.js";
  * draws fewer chips rather than resizing a GPU buffer mid-hand.
  */
 const MAX_CHIPS = 256;
+
+/**
+ * Radial divisions per chip. Eighteen at two centimetres across is already
+ * past the point where anyone can see a facet, and it is multiplied by every
+ * instance in the room.
+ */
+const CHIP_SEGMENTS = 18;
 
 /** How fast a chip travels to where it now belongs. */
 const SLIDE_LAMBDA = 6.4;
@@ -210,8 +218,27 @@ export function ChipField({ snapshot, placed, preview }: ChipFieldProps) {
       // pot the moment the camera turned away from where the chips started.
       frustumCulled={false}
     >
-      <cylinderGeometry args={[CHIP_RADIUS, CHIP_RADIUS, CHIP_THICKNESS, 18]} />
-      <meshStandardMaterial roughness={0.55} metalness={0.05} />
+      {/*
+        One geometry and one material for every chip in the room, with the
+        cylinder's own UVs squeezed so the caps sample the face design and the
+        rim samples the edge spots. See `chipGeometry`.
+
+        The map is drawn in greys and the instance colour multiplies through
+        it, so a chip's spots are a brighter shade of its own denomination
+        rather than the white of a real casino chip. That is the one thing here
+        a photograph would disagree with, and the alternative was a per-instance
+        UV attribute and a shader patch - a lot of fragility for a detail on a
+        two-centimetre object.
+      */}
+      <primitive
+        object={chipGeometry(CHIP_RADIUS, CHIP_THICKNESS, CHIP_SEGMENTS)}
+        attach="geometry"
+      />
+      <meshStandardMaterial
+        map={chipTexture()}
+        roughness={0.52}
+        metalness={0.05}
+      />
     </instancedMesh>
   );
 }

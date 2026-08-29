@@ -64,6 +64,7 @@ export default function App() {
         reconnecting={room.status.kind === "reconnecting"}
         onAct={room.act}
         onSitOutChange={room.setSittingOut}
+        onBuyIn={room.buyIn}
         onLeave={leave}
       />
     );

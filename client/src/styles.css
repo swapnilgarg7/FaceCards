@@ -1,15 +1,80 @@
-/* Phase 0 is a spike. Legible beats beautiful; phase 5 owns the art. */
+/* ---------------------------------------------------------------------------
+   The DOM half of the art direction.
+
+   Phase 0 wrote this file as a spike and said phase 5 owned the art. This is
+   phase 5. The palette below is the same one `scene/surfaces.ts` carries for
+   the 3D side - oxblood, walnut, brass, felt green, neon - because the HUD
+   floats *over* the room rather than beside it, and a panel in a different
+   family of colours reads as another application on top of the game.
+
+   Two typefaces, both OFL, both self-hosted (see `index.html`), both credited
+   in `docs/ASSET-CREDITS.md`:
+
+   - Cinzel Decorative, for the few places something should feel engraved. Used
+     sparingly: it is a display face, and a display face on a running number is
+     unreadable.
+   - Bebas Neue, for every chip count in the product. Condensed caps with
+     tabular figures is exactly the job - "1,250" has to fit a narrow column
+     and must not change width as it counts down.
+
+   Body text stays on the system stack. It is the fastest, most legible option
+   at 13px on a dark ground, and a third webfont would be a download to make
+   ordinary sentences worse.
+   ------------------------------------------------------------------------- */
+
+@font-face {
+  font-family: "Cinzel Decorative";
+  src: url("/fonts/cinzel-decorative-latin-700.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  /* Swap, not block: a lobby that renders nothing while a font is in flight
+     is a lobby that looks broken on a slow connection. */
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Bebas Neue";
+  src: url("/fonts/bebas-neue-latin-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
 
 :root {
   color-scheme: dark;
-  --bg: #14171d;
-  --panel: #1c2029;
-  --line: #2c323e;
-  --text: #e7e9ee;
-  --dim: #939aa8;
-  --accent: #d4af37;
-  --error: #ff8080;
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  /* Ground. Near-black, but plum rather than blue-grey: the room it sits over
+     is lit by warm brass and pink neon, and a cool HUD on a warm scene is the
+     single most obvious way to make an overlay look bolted on. */
+  --bg: #12080f;
+  --bg-deep: #0a0409;
+  /* Glass. Translucent on purpose - what is behind a panel is the table. */
+  --panel: rgba(32, 17, 27, 0.86);
+  --panel-solid: #1e1019;
+  --line: #3b2432;
+  --line-bright: #5b3a4a;
+  --text: #f3ece1;
+  --dim: #a5909b;
+
+  /* Brass, and the ink that is legible on top of it. */
+  --accent: #d9b451;
+  --accent-bright: #f2d68c;
+  --accent-ink: #2a1c05;
+
+  /* The two lights in the room, for anything that wants to belong to it. */
+  --neon: #ff4d8d;
+  --neon-cool: #3aa0ff;
+  --felt: #0d4531;
+
+  --error: #ff8b86;
+  --ok: #7bd88f;
+
+  --font-ui: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Cinzel Decorative", Georgia, "Times New Roman", serif;
+  --font-numeric: "Bebas Neue", "Oswald", "Arial Narrow", "Helvetica Neue",
+    sans-serif;
+
+  font-family: var(--font-ui);
 }
 
 * {
@@ -18,8 +83,19 @@
 
 body {
   margin: 0;
-  background: var(--bg);
   color: var(--text);
+  /* A pooled light on the ground, matching the pendant over the table. Fixed
+     rather than scrolled, so the lobby and the table share one light source.
+     `--bg` under it, so a browser that cannot paint the gradient still gets a
+     dark ground rather than white. */
+  background: var(--bg);
+  background-image: radial-gradient(
+    120% 90% at 50% 0%,
+    #24121f 0%,
+    var(--bg) 42%,
+    var(--bg-deep) 100%
+  );
+  background-attachment: fixed;
 }
 
 h1,
@@ -28,7 +104,17 @@ h2 {
   font-weight: 600;
 }
 h1 {
-  font-size: 1.4rem;
+  font-family: var(--font-display);
+  font-size: 1.9rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.15;
+  /* The one place in the product with a gradient on type. It is the wordmark;
+     everything else stays flat, because gilt on a running number is noise. */
+  background: linear-gradient(180deg, var(--accent-bright), var(--accent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 h2 {
   font-size: 0.95rem;
@@ -37,13 +123,34 @@ h2 {
   letter-spacing: 0.08em;
 }
 
+/* Every chip count in the product, in one place. Condensed caps, tabular, and
+   a touch of tracking so the digits do not touch at small sizes. */
+.num {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+
 .lobby {
   max-width: 26rem;
-  margin: 12vh auto;
-  padding: 0 1.5rem;
+  margin: 10vh auto;
+  padding: 1.6rem 1.5rem 1.8rem;
   display: flex;
   flex-direction: column;
   gap: 0.9rem;
+  /* The lobby is the first thing anyone sees, and until phase 5 it was a form
+     on a grey field. It is now a card cut out of the same room the table is
+     in: felt-dark ground, brass hairline, a light pooled at the top. */
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: radial-gradient(
+      120% 70% at 50% -10%,
+      rgba(217, 180, 81, 0.09),
+      transparent 60%
+    ),
+    var(--panel-solid);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 .lobby__sub {
   margin: 0;
@@ -70,7 +177,7 @@ h2 {
   padding: 0.7rem 0.9rem;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: var(--panel);
+  background: rgba(0, 0, 0, 0.28);
   color: var(--dim);
 }
 /* Secondary by construction: smaller, quieter, and below the fold of the
@@ -104,41 +211,67 @@ h2 {
   color: var(--dim);
 }
 .field input {
-  padding: 0.6rem 0.7rem;
+  padding: 0.62rem 0.75rem;
   border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--panel);
+  border-radius: 7px;
+  /* Recessed rather than raised: a field is a hole in a fascia, and on a dark
+     panel that is the difference between a field and another button. */
+  background: rgba(0, 0, 0, 0.32);
   color: var(--text);
   font: inherit;
+  transition: border-color 140ms ease;
+}
+.field input:hover {
+  border-color: var(--line-bright);
 }
 .field input:focus-visible {
   outline: 2px solid var(--accent);
 }
 
 .btn {
-  padding: 0.6rem 0.9rem;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--panel);
+  padding: 0.6rem 0.95rem;
+  border: 1px solid var(--line-bright);
+  border-radius: 7px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent),
+    var(--panel);
   color: var(--text);
   font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  /* Small caps with tracking: the register a casino uses for a control, and
+     it also stops a two-word button reading as prose. */
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
   cursor: pointer;
+  transition: border-color 140ms ease, color 140ms ease, box-shadow 140ms ease;
 }
 .btn:hover:not(:disabled) {
   border-color: var(--accent);
+  color: var(--accent-bright);
+  box-shadow: 0 0 0 1px rgba(217, 180, 81, 0.18);
+}
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 .btn:disabled {
-  opacity: 0.45;
+  opacity: 0.4;
   cursor: not-allowed;
 }
 .btn--primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #20180a;
-  font-weight: 600;
+  background: linear-gradient(180deg, var(--accent-bright), var(--accent));
+  border-color: var(--accent-bright);
+  color: var(--accent-ink);
+  font-weight: 700;
+  box-shadow: 0 6px 18px rgba(217, 180, 81, 0.22);
+}
+.btn--primary:hover:not(:disabled) {
+  color: var(--accent-ink);
+  filter: brightness(1.07);
 }
 .btn--ghost {
   background: transparent;
+  border-color: var(--line);
 }
 
 /* The 3D room fills the viewport; the HUD floats over it. Anything given a
@@ -232,18 +365,25 @@ h2 {
   flex-wrap: wrap;
   pointer-events: none;
 }
+/* The room code is the one thing anyone ever has to read out loud, so it is
+   the one thing in the HUD allowed to be big. */
 .hud__code {
-  padding: 0.45rem 0.7rem;
-  border-radius: 6px;
-  background: rgba(16, 19, 25, 0.7);
-  color: var(--accent);
-  font-weight: 600;
-  letter-spacing: 0.14em;
+  padding: 0.3rem 0.75rem 0.22rem;
+  border: 1px solid rgba(217, 180, 81, 0.35);
+  border-radius: 7px;
+  background: rgba(20, 10, 17, 0.66);
+  color: var(--accent-bright);
+  font-family: var(--font-numeric);
+  font-size: 1.32rem;
+  line-height: 1.1;
+  letter-spacing: 0.24em;
+  /* The letter-spacing is trailing, which would push the box off-centre. */
+  text-indent: 0.24em;
 }
 .hud__meta {
   padding: 0.45rem 0.6rem;
   border-radius: 6px;
-  background: rgba(16, 19, 25, 0.55);
+  background: rgba(20, 10, 17, 0.5);
   color: var(--dim);
   font-size: 0.8rem;
 }
@@ -257,8 +397,8 @@ h2 {
 }
 
 .hud .btn {
-  background: rgba(28, 32, 41, 0.78);
-  backdrop-filter: blur(6px);
+  background: rgba(30, 16, 26, 0.7);
+  backdrop-filter: blur(8px);
 }
 /* The key chip. One rule, because chips appear on buttons, in the top-left
    hint strip and in the settings list, and a shortcut that looks different in
@@ -267,13 +407,17 @@ h2 {
   display: inline-block;
   min-width: 1.15rem;
   padding: 0.05rem 0.3rem;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-bright);
   border-radius: 4px;
-  background: rgba(8, 10, 14, 0.5);
+  background: rgba(0, 0, 0, 0.42);
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.5);
   color: var(--dim);
   font: inherit;
   font-size: 0.72rem;
+  font-weight: 600;
   text-align: center;
+  text-transform: none;
+  letter-spacing: 0;
   line-height: 1.35;
 }
 .btn .kbd {
@@ -315,14 +459,34 @@ h2 {
   backdrop-filter: blur(7px);
 }
 .settings__panel {
+  position: relative;
   width: min(30rem, 100%);
   max-height: 100%;
   overflow-y: auto;
-  padding: 1.25rem;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--panel);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  padding: 1.35rem;
+  border: 1px solid var(--line-bright);
+  border-radius: 14px;
+  background: var(--panel-solid);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.62),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+/* A brass rule along the top edge. One line, and it is the difference between
+   a dialog and a fascia. */
+.settings__panel::before {
+  content: "";
+  position: sticky;
+  top: 0;
+  display: block;
+  height: 2px;
+  margin: -1.35rem -1.35rem 1.1rem;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--accent) 22%,
+    var(--accent-bright) 50%,
+    var(--accent) 78%,
+    transparent
+  );
 }
 .settings__panel:focus-visible {
   outline: 2px solid var(--accent);
@@ -394,8 +558,10 @@ h2 {
 }
 
 .code {
-  color: var(--accent);
-  letter-spacing: 0.12em;
+  color: var(--accent-bright);
+  font-family: var(--font-numeric);
+  font-size: 1.1em;
+  letter-spacing: 0.18em;
 }
 
 .banner {
@@ -423,12 +589,17 @@ h2 {
 .tile {
   margin: 0;
   border: 2px solid var(--line);
-  border-radius: 8px;
+  border-radius: 10px;
   overflow: hidden;
   background: #000;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
 }
+/* The same halo the avatar wears in the scene, so the self-view agrees with
+   what everyone else is seeing of you. */
 .tile--speaking {
   border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(217, 180, 81, 0.35),
+    0 0 22px rgba(217, 180, 81, 0.28);
 }
 .tile__video {
   aspect-ratio: 16 / 9;
@@ -447,7 +618,7 @@ h2 {
   display: flex;
   gap: 0.5rem;
   padding: 0.45rem 0.6rem;
-  background: var(--panel);
+  background: var(--panel-solid);
   font-size: 0.85rem;
 }
 .tile__label [aria-label="muted"] {
@@ -455,15 +626,24 @@ h2 {
 }
 
 /* The action bar sits along the bottom, clear of the self-view tile on the
-   right. The hand readout hugs the left edge so it never crosses the middle
-   of the screen, which is where the faces are. */
+   right. The left column hugs the left edge so it never crosses the middle of
+   the screen, which is where the faces are. */
 .hud--table {
   /* Clears the top strip, which is now two lines: the room code and the
      always-live shortcuts under it. */
   top: 5.9rem;
   left: 1.1rem;
   bottom: 6rem;
-  align-items: flex-start;
+  width: 19rem;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 0.7rem;
+  /* Six seats plus an open buy-in control can outgrow a short window. The
+     column scrolls rather than pushing the hand readout off the bottom, and
+     the scroll lives here rather than on the panel so both stay put. */
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 .hud--bottom {
   bottom: 0.9rem;
@@ -488,75 +668,31 @@ h2 {
   font-size: 0.85rem;
 }
 .hand__pot b {
-  color: var(--accent);
+  color: var(--accent-bright);
+  font-family: var(--font-numeric);
+  font-size: 1.12rem;
   font-variant-numeric: tabular-nums;
+  letter-spacing: 0.05em;
 }
 
-.hand__seats {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  font-size: 0.85rem;
-}
-.hand__seat {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-  flex-wrap: wrap;
-  padding: 0.25rem 0.5rem;
-  border-left: 2px solid transparent;
-  border-radius: 4px;
-  background: rgba(20, 23, 29, 0.55);
-}
-/* Whose turn it is has to be readable at a glance from across the table. */
-.hand__seat--acting {
-  border-left-color: var(--accent);
-  background: rgba(212, 175, 55, 0.12);
-}
-.hand__seat--folded {
-  opacity: 0.5;
-}
-.hand__name {
-  display: flex;
-  gap: 0.35rem;
-  align-items: center;
-  min-width: 7rem;
-}
+/* The same object as the disc on the felt, at HUD size. */
 .hand__button {
   display: inline-grid;
   place-items: center;
-  width: 1.1rem;
-  height: 1.1rem;
+  width: 1.15rem;
+  height: 1.15rem;
+  border: 1px solid rgba(0, 0, 0, 0.55);
   border-radius: 50%;
-  background: var(--text);
-  color: var(--bg);
-  font-size: 0.65rem;
+  background: #f2ece0;
+  color: #1b1712;
+  font-family: var(--font-display);
+  font-size: 0.68rem;
   font-weight: 700;
+  line-height: 1;
 }
-.hand__stack {
-  color: var(--accent);
-  font-variant-numeric: tabular-nums;
-}
-.hand__bet {
-  color: var(--dim);
-  font-variant-numeric: tabular-nums;
-}
-.hand__bet::before {
-  content: "bet ";
-}
-.hand__reveal,
-.hand__tag {
-  color: var(--dim);
-  font-size: 0.75rem;
-}
-.hand__reveal b {
-  color: var(--accent);
-}
-
-/* Cards are flat DOM until phase 4 makes them objects you can pick up. */
+/* The real cards are on the felt. These are the fallback readout spec
+   section 8 asks for, so they are drawn to match the atlas rather than to
+   compete with it: the same paper, the same inks, the same red back. */
 .cardrow {
   display: inline-flex;
   gap: 0.2rem;
@@ -570,22 +706,28 @@ h2 {
   height: 2.4rem;
   padding: 0 0.25rem;
   border-radius: 4px;
-  background: #f4f1e8;
-  color: #14171d;
-  font-size: 0.85rem;
+  background: linear-gradient(160deg, #fbf8f0, #ece7d9);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+  color: #16181d;
+  font-size: 0.9rem;
+  font-weight: 600;
   line-height: 1;
 }
 .card--red {
-  color: #b3241f;
+  color: #b8232c;
 }
 .card--back {
+  color: transparent;
   background: repeating-linear-gradient(
-    45deg,
-    #2c3a5a,
-    #2c3a5a 3px,
-    #22304c 3px,
-    #22304c 6px
-  );
+      45deg,
+      rgba(255, 255, 255, 0.16),
+      rgba(255, 255, 255, 0.16) 2px,
+      transparent 2px,
+      transparent 6px
+    ),
+    #8c1f2a;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45),
+    inset 0 0 0 2px rgba(255, 255, 255, 0.35);
 }
 .card--dim {
   opacity: 0.45;
@@ -668,13 +810,15 @@ h2 {
   align-items: center;
   padding: 0.5rem 0.6rem;
   border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--panel);
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.22);
   cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease;
 }
 .picker__option--on {
   border-color: var(--accent);
-  background: rgba(212, 175, 55, 0.1);
+  background: rgba(217, 180, 81, 0.12);
+  box-shadow: 0 0 0 1px rgba(217, 180, 81, 0.2);
 }
 /* The radio itself is redundant next to the highlight, but it stays in the
    DOM: it is what makes arrow keys move between archetypes. */
@@ -741,17 +885,10 @@ h2 {
   background: var(--dim);
 }
 .clock--mine .clock__fill {
-  background: var(--accent);
+  background: linear-gradient(90deg, var(--accent), var(--accent-bright));
 }
 .clock__fill[data-low="true"] {
   background: var(--error);
-}
-
-/* A seat being held through a reconnection window. Dimmer than folded,
-   because folded is out of a hand and this may be out of the evening. */
-.hand__seat--away {
-  opacity: 0.45;
-  border-left-color: var(--error);
 }
 
 /* ---------------------------------------------------------------------------
@@ -788,8 +925,10 @@ h2 {
   text-align: center;
 }
 .push b {
-  font-size: 1.05rem;
+  font-family: var(--font-numeric);
+  font-size: 1.35rem;
   font-variant-numeric: tabular-nums;
+  letter-spacing: 0.05em;
 }
 .push span {
   font-size: 0.78rem;
@@ -887,4 +1026,252 @@ h2 {
   .waking__fill {
     transition: none;
   }
+}
+
+/* ---------------------------------------------------------------------------
+   Standings.
+
+   Three numeric columns on a fixed grid, because the whole value of the panel
+   is being able to run your eye down one of them. Everything numeric is
+   tabular-nums for the same reason: proportional digits make a column of chip
+   counts jitter as it updates, which is exactly when someone is reading it.
+
+   Quiet by default. It is a panel people read *between* hands, and the faces
+   are the product, so nothing in here is allowed to be brighter than the
+   table behind it except the one thing that is genuinely urgent: being out of
+   chips, which is the only state in the game a player cannot leave on their
+   own.
+   ------------------------------------------------------------------------- */
+
+.board {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.6rem 0.7rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  background: rgba(20, 23, 29, 0.72);
+  backdrop-filter: blur(6px);
+  font-size: 0.85rem;
+}
+.board__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.board__head h2 {
+  margin: 0;
+}
+.board__hand {
+  color: var(--dim);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* One grid, shared by the header strip and every row, so the columns cannot
+   drift apart as names get longer. */
+.board__cols,
+.board__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 3.4rem 3.9rem 3.9rem;
+  gap: 0.4rem;
+  align-items: baseline;
+}
+.board__cols {
+  padding: 0 0.35rem 0.15rem;
+  border-bottom: 1px solid var(--line);
+  color: var(--dim);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.board__rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.board__row {
+  padding: 0.28rem 0.35rem;
+  border-left: 2px solid transparent;
+  border-radius: 4px;
+}
+.board__row--me {
+  background: rgba(255, 255, 255, 0.05);
+}
+/* Whose turn it is has to be readable at a glance from across the table. */
+.board__row--acting {
+  border-left-color: var(--accent);
+  background: rgba(217, 180, 81, 0.12);
+}
+/* Dimmer than anything else, because this may be out of the evening rather
+   than out of a hand. */
+.board__row--away {
+  opacity: 0.45;
+  border-left-color: var(--error);
+}
+.board__row--busted {
+  opacity: 0.72;
+}
+
+.board__who {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+.board__name {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+  /* A long display name truncates rather than pushing the numbers off the
+     right-hand edge, which is the one thing the panel exists for. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.board__rank {
+  min-width: 1rem;
+  color: var(--dim);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+.board__you,
+.board__blind {
+  flex: none;
+  padding: 0 0.25rem;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--dim);
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.board__note {
+  color: var(--dim);
+  font-size: 0.7rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.board__note--reveal {
+  color: var(--text);
+}
+.board__note--reveal b {
+  color: var(--accent);
+}
+
+/* Every chip count in the standings, in the condensed face the rail plaques
+   on the felt use. The two readouts are of the same numbers and should look
+   like it - and tabular figures in a right-aligned column is what stops a
+   stack jittering its own row as it changes. */
+.board__num {
+  text-align: right;
+  font-family: var(--font-numeric);
+  font-size: 1.02rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  line-height: 1.25;
+}
+.board__cols .board__num {
+  text-align: right;
+}
+.board__cols .board__who {
+  display: block;
+}
+.board__aside {
+  display: block;
+  color: var(--dim);
+  font-size: 0.65rem;
+}
+/* Green and red would be the obvious choice and are the wrong one: the only
+   saturated colour at this table is the accent on the felt and the chips, and
+   a leaderboard flashing traffic lights would pull the eye off the faces. Up
+   is the accent, down is dimmed, and the sign does the rest. */
+.board__profit--up {
+  color: var(--accent);
+}
+.board__profit--down {
+  color: var(--dim);
+}
+
+.board__felt {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.3rem 0.35rem 0;
+  border-top: 1px solid var(--line);
+  color: var(--dim);
+  font-size: 0.75rem;
+}
+.board__felt b {
+  color: var(--accent-bright);
+  font-family: var(--font-numeric);
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+
+/* Buying in. Attached to the standings rather than the action bar, because
+   the numbers above it are what prompt it, and because the action bar belongs
+   entirely to the decision on the clock. */
+.board__buyin {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--line);
+}
+.board__buyin--note {
+  margin: 0;
+  color: var(--dim);
+  font-size: 0.72rem;
+}
+/* The one state in the game a player cannot get out of on their own, so it is
+   the one place this panel is allowed to raise its voice. */
+.board__buyin--urgent {
+  border-top-color: var(--accent);
+}
+.board__buyin-lede {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.75rem;
+}
+.board__buyin-slider {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.2rem 0.5rem;
+  color: var(--dim);
+  font-size: 0.72rem;
+}
+.board__buyin-slider b {
+  color: var(--accent-bright);
+  font-family: var(--font-numeric);
+  font-size: 1.02rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+.board__buyin-slider input {
+  grid-column: 1 / -1;
+  width: 100%;
+  accent-color: var(--accent);
+}
+.board__buyin-row {
+  display: flex;
+  gap: 0.4rem;
+}
+.board__buyin-row .btn {
+  flex: 1;
+  justify-content: center;
+  padding: 0.3rem 0.4rem;
+  font-size: 0.75rem;
+}
+.board__buyin .note {
+  margin: 0;
 }

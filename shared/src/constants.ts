@@ -45,6 +45,33 @@ export const SMALL_BLIND = 5;
 export const BIG_BLIND = 10;
 
 /**
+ * Buy-in bounds, in chips. A cash game, so a seat may re-stake at any time and
+ * may top up between hands - but only inside a band, because a table where one
+ * seat can put a hundred times the others behind it is not the same game.
+ *
+ * Twenty big blinds is the shortest stack that can still play back at a raise;
+ * two hundred is the deepest anyone at a friendly table wants to be covered
+ * for. `MAX_STACK` is the ceiling a top-up may take a seat to, so a winning
+ * player cannot keep reloading to stay the biggest stack.
+ */
+export const MIN_BUY_IN = 20 * BIG_BLIND;
+export const MAX_BUY_IN = 200 * BIG_BLIND;
+export const MAX_STACK = 400 * BIG_BLIND;
+
+/** What the buy-in dialog offers first. */
+export const DEFAULT_BUY_IN = STARTING_STACK;
+
+/**
+ * Consecutive timed-out turns before the server sits a seat out.
+ *
+ * The clock already answers for an absent player, but answering forever is not
+ * the same as being at the table: after this many in a row the seat is dealt
+ * out until its player says otherwise. Reset by any action the player takes
+ * themselves, so thinking slowly three times in a row costs nothing.
+ */
+export const AUTO_SIT_OUT_TIMEOUTS = 3;
+
+/**
  * How long the result of a hand stays on screen before the next deal.
  *
  * Long enough to read a showdown and say something about it, which is the

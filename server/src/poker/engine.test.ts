@@ -95,6 +95,9 @@ function arrangeDeck(
 interface TableSpec {
   stacks: Record<number, number>;
   button: number;
+  /** Hand the blind arrangement over to the caller; see `blinds.ts`. */
+  smallBlindSeat?: number | null;
+  bigBlindSeat?: number;
   smallBlind?: number;
   bigBlind?: number;
   holes?: Record<number, string>;
@@ -119,6 +122,12 @@ function table(spec: TableSpec): HandState {
   return startHand({
     players,
     button: spec.button,
+    ...(spec.bigBlindSeat === undefined
+      ? {}
+      : {
+          bigBlindSeat: spec.bigBlindSeat,
+          smallBlindSeat: spec.smallBlindSeat ?? null,
+        }),
     smallBlind: spec.smallBlind ?? 5,
     bigBlind: spec.bigBlind ?? 10,
     handNumber: 1,
@@ -985,5 +994,113 @@ describe("the test rig", () => {
   it("produces exactly the deck it was asked for", () => {
     const target = shuffled(makeDeck(), seededRandomInt(99));
     expect(shuffled(makeDeck(), stackedRandomInt(target))).toEqual(target);
+  });
+});
+
+// ------------------------------------------------- blinds the caller chose
+
+/**
+ * `blinds.ts` owns who posts what once players start coming and going, and it
+ * can hand the engine two arrangements the engine would never build for
+ * itself: a small blind nobody posts, and a button on an empty chair. Both are
+ * ordinary casino positions, and both change where the action opens, so both
+ * are tested here rather than only next door.
+ */
+describe("an arrangement handed in from outside", () => {
+  it("posts only the big blind when the small blind is dead", () => {
+    const state = table({
+      stacks: { 0: 500, 1: 500, 3: 500 },
+      button: 2,
+      smallBlindSeat: null,
+      bigBlindSeat: 0,
+    });
+
+    expect(totalPot(state)).toBe(10);
+    expect(state.seats.get(0)!.committed).toBe(10);
+    expect(state.seats.get(1)!.committed).toBe(0);
+    expect(state.seats.get(3)!.committed).toBe(0);
+    expect(state.currentBet).toBe(10);
+    // Action still opens to the big blind's left, dead small blind or not.
+    expect(state.actingSeat).toBe(1);
+  });
+
+  it("keeps the button on an empty chair and opens the flop from it", () => {
+    const state = table({
+      stacks: { 0: 500, 1: 500, 3: 500 },
+      button: 2,
+      smallBlindSeat: 3,
+      bigBlindSeat: 0,
+    });
+
+    expect(state.button).toBe(2);
+    expect(state.seats.has(2)).toBe(false);
+    expect(state.seats.get(3)!.committed).toBe(5);
+    expect(state.seats.get(0)!.committed).toBe(10);
+    expect(state.actingSeat).toBe(1);
+
+    act(state, 1, "call");
+    act(state, 3, "call");
+    act(state, 0, "check");
+
+    // Postflop opens at the first live seat clockwise of the dead button,
+    // which is seat 3 - not seat 0, and not whoever the button "would" be.
+    expect(state.phase).toBe("flop");
+    expect(state.actingSeat).toBe(3);
+  });
+
+  it("refuses an arrangement that names a seat not in the hand", () => {
+    const players = [0, 1, 2].map((seat) => ({
+      seat,
+      playerId: `p${seat}`,
+      stack: 500,
+    }));
+    const options = {
+      players,
+      button: 0,
+      smallBlind: 5,
+      bigBlind: 10,
+      handNumber: 1,
+      randomInt: seededRandomInt(7),
+    };
+
+    expect(() =>
+      startHand({ ...options, smallBlindSeat: 1, bigBlindSeat: 4 }),
+    ).toThrow(/big blind seat 4/);
+    expect(() =>
+      startHand({ ...options, smallBlindSeat: 5, bigBlindSeat: 2 }),
+    ).toThrow(/small blind seat 5/);
+    expect(() =>
+      startHand({ ...options, smallBlindSeat: 2, bigBlindSeat: 2 }),
+    ).toThrow(/cannot post both blinds/);
+  });
+
+  it("still balances the pot when a blind went unposted", () => {
+    const state = table({
+      stacks: { 0: 200, 1: 200, 3: 200 },
+      button: 2,
+      smallBlindSeat: null,
+      bigBlindSeat: 0,
+      holes: { 0: "As Ah", 1: "Ks Kh", 3: "2c 3d" },
+      board: "7c 8d 9h Jc Qs",
+    });
+
+    act(state, 1, "call");
+    act(state, 3, "fold");
+    act(state, 0, "check");
+    for (const street of [0, 1, 2]) {
+      void street;
+      act(state, 0, "check");
+      act(state, 1, "check");
+    }
+
+    const result = state.result!;
+    const potted = result.pots.reduce((sum, pot) => sum + pot.amount, 0);
+    const contributed = [...state.seats.values()].reduce(
+      (sum, seat) => sum + seat.totalCommitted,
+      0,
+    );
+    expect(potted).toBe(contributed);
+    expect(potted).toBe(20);
+    expect([...result.net.values()].reduce((a, b) => a + b, 0)).toBe(0);
   });
 });

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { KEYBINDS, RESERVED_KEYS, keyLabel } from "./keybinds.js";
+import { KEYBINDS, LOOK_KEYBIND_IDS, keyLabel, keybind } from "./keybinds.js";
 import type { UseTableAudio } from "../audio/useTableAudio.js";
 import type { UseMedia } from "../media/useMedia.js";
 import { DEFAULT_SENSITIVITY } from "../scene/lookCurve.js";
@@ -194,8 +194,9 @@ export function SettingsPanel({
             does not have to.
           </p>
           <p className="note">
-            {RESERVED_KEYS.map((k) => k.toUpperCase()).join("")} are left free
-            on purpose, for moving in your seat later.
+            {LOOK_KEYBIND_IDS.map((id) => keybind(id).key.toUpperCase()).join("")}{" "}
+            turn your head, and they add to the mouse rather than taking over
+            from it. Let go and the cursor is still steering.
           </p>
         </section>
 

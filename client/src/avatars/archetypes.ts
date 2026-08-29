@@ -1,5 +1,6 @@
 import { AVATARS, avatarById, type AvatarId } from "@facecards/shared";
 import { HEAD_SCALE } from "../scene/body.js";
+import { personalityFor, type Personality } from "./idle.js";
 
 /**
  * How each archetype is built out of primitives, as data.
@@ -55,6 +56,25 @@ export type HeadPiece =
   /** Businessman: nothing on the head; the tie does the work. */
   | { kind: "none" };
 
+/**
+ * What sits on the shoulders. One per archetype, and chosen for silhouette
+ * rather than for tailoring - see `Outfit.tsx` for why exaggeration is the
+ * point at this distance.
+ *
+ * Same socket contract as `HeadPiece`: an outfit lives *below* the face
+ * plane's lower edge, and nothing in it may reach up across a chin.
+ */
+export type Outfit =
+  /** Business dress: lapels, a pale collar, optionally a pocket square. */
+  | { kind: "suit"; collar: string; pocketSquare: boolean }
+  /** Cowboy: a wide western yoke and a bandana. */
+  | { kind: "yoke" }
+  /** Wizard: a cape hanging behind the shoulders. */
+  | { kind: "cape" }
+  /** A heavy ring at the neck, for the two silhouettes already doing the work. */
+  | { kind: "collarBand" }
+  | { kind: "none" };
+
 export interface AvatarLook {
   id: string;
   label: string;
@@ -67,8 +87,18 @@ export interface AvatarLook {
   /** Absolute head scale: `HEAD_SCALE` with this archetype's stretch applied. */
   headScale: [number, number, number];
   headPiece: HeadPiece;
+  outfit: Outfit;
   /** A tie down the chest. Business dress, and only that. */
   tie: boolean;
+  /**
+   * How this archetype fidgets while nothing is happening.
+   *
+   * Routed through the same lookup as the geometry on purpose: an archetype is
+   * a look *and* a way of sitting, and anything that resolves one and not the
+   * other would let a cowboy end up breathing like a businessman. Defined in
+   * `idle.ts`, where its amplitude is bounded and tested.
+   */
+  idle: Personality;
 }
 
 interface LookShape {
@@ -76,6 +106,7 @@ interface LookShape {
   /** Multiplied onto `HEAD_SCALE`. `[1, 1, 1]` is the default skull. */
   headStretch: [number, number, number];
   headPiece: HeadPiece;
+  outfit: Outfit;
   tie: boolean;
 }
 
@@ -93,12 +124,14 @@ const LOOKS: Record<AvatarId, LookShape> = {
       crownRadius: 0.115,
       crownHeight: 0.1,
     },
+    outfit: { kind: "yoke" },
     tie: false,
   },
   businessman: {
     headColour: "#2b3038",
     headStretch: [1, 1, 1],
     headPiece: { kind: "none" },
+    outfit: { kind: "suit", collar: "#e8e4d8", pocketSquare: false },
     tie: true,
   },
   gentleman: {
@@ -110,12 +143,14 @@ const LOOKS: Record<AvatarId, LookShape> = {
       crownRadius: 0.115,
       crownHeight: 0.19,
     },
+    outfit: { kind: "suit", collar: "#f2eee2", pocketSquare: true },
     tie: true,
   },
   wizard: {
     headColour: "#33304a",
     headStretch: [1, 1, 1],
     headPiece: { kind: "cone", radius: 0.14, height: 0.32, tilt: 0.18 },
+    outfit: { kind: "cape" },
     tie: false,
   },
   alien: {
@@ -123,12 +158,14 @@ const LOOKS: Record<AvatarId, LookShape> = {
     headColour: "#1f6b52",
     headStretch: [0.96, 1.16, 0.98],
     headPiece: { kind: "antennae", length: 0.13, spread: 0.075, bulb: 0.026 },
+    outfit: { kind: "collarBand" },
     tie: false,
   },
   shark: {
     headColour: "#44586a",
     headStretch: [1.02, 0.96, 1.12],
     headPiece: { kind: "fin", height: 0.17, length: 0.16 },
+    outfit: { kind: "collarBand" },
     tie: false,
   },
 };
@@ -156,6 +193,8 @@ export function avatarLook(id: string): AvatarLook {
       HEAD_SCALE.z * shape.headStretch[2],
     ],
     headPiece: shape.headPiece,
+    outfit: shape.outfit,
     tie: shape.tie,
+    idle: personalityFor(archetype.id),
   };
 }

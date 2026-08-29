@@ -3,6 +3,37 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      name="description"
+      content="Virtual poker night: live faces, real chips, one table."
+    />
+    <!--
+      Self-hosted, not linked from Google's CDN. Three reasons, in order of
+      how much they matter: the fonts are needed by canvas textures inside the
+      3D scene, and a stylesheet that has to be fetched, parsed and then
+      resolved is a race the first rail plaque loses; a third-party font
+      request is a third-party request from every player's browser; and a
+      hosted font is one more thing that can be blocked or slow on somebody's
+      network while six friends wait for a table.
+
+      Both are OFL, both are credited in docs/ASSET-CREDITS.md, and the full
+      licence ships beside them at /fonts/LICENSE.txt.
+    -->
+    <link
+      rel="preload"
+      href="/fonts/cinzel-decorative-latin-700.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="/fonts/bebas-neue-latin-400.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
     <title>FaceCards</title>
   </head>
   <body>

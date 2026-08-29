@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, type RefObject } from "react";
 import { Canvas } from "@react-three/fiber";
 import { ACESFilmicToneMapping } from "three";
 import { Avatar } from "../avatars/Avatar.js";
@@ -7,8 +7,12 @@ import type { RoomSnapshot } from "../net/useRoom.js";
 import { AttentionDirector, type AttentionPeer } from "./AttentionDirector.js";
 import { ChipField, ChipGrabPad } from "./ChipField.js";
 import { PokerTable } from "./PokerTable.js";
+import { RoomShell } from "./RoomShell.js";
+import { SeatPlaques } from "./SeatPlaques.js";
 import { SeatedCamera } from "./SeatedCamera.js";
 import { TableCards } from "./TableCards.js";
+import { FIXTURES, PALETTE_FOG, ROOM_RADIUS } from "./decor.js";
+import type { LookAxes } from "./keyboardLook.js";
 import { assignSeats, seatLayout } from "./layout.js";
 
 /**
@@ -28,6 +32,8 @@ export interface Room3DProps {
   lookEnabled: boolean;
   /** 0..1 look sensitivity, from the settings panel. */
   sensitivity: number;
+  /** Which way the held W/A/S/D keys are turning the view. */
+  lookKeys?: RefObject<LookAxes> | undefined;
   /** The local player is holding their own cards up to look at them. */
   peeking: boolean;
   onPeekChange(peeking: boolean): void;
@@ -39,27 +45,60 @@ export interface Room3DProps {
 }
 
 function Lighting() {
+  const pendant = FIXTURES.find((f) => f.id === "pendant")!;
+
   return (
     <>
-      {/* Even fill from every direction, so no seat is better lit than any
-          other. A single rim light would flatter whoever happened to sit in
-          front of it and silhouette whoever sat opposite. */}
-      <hemisphereLight args={["#b9c6ff", "#3a2a1e", 1.1]} />
+      {/*
+        Fill, and the one rule it exists to keep: **no seat is better lit than
+        any other.** A single rim light would flatter whoever happened to sit
+        in front of it and silhouette whoever sat opposite, and at a round
+        table where everyone can see everyone that is a real unfairness rather
+        than a stylistic one.
 
-      {/* The pooled light over the table the spec asks for. One shadow
-          caster, small map: six avatars is well inside budget, and the
-          contact shadow is most of what sells the table as a physical
-          object. */}
+        Warm from above, cool from below, because that is what the room
+        actually contains: a warm pendant over the table and a cold neon cove
+        washing the carpet. The hemisphere is doing the bounce those two would
+        do if this scene could afford global illumination.
+      */}
+      <hemisphereLight args={["#ffcf9c", "#2a3f66", 0.62]} />
+
+      {/* So that nothing is ever pure black - a face in shadow is a face
+          nobody can read, which defeats the entire product. */}
+      <ambientLight intensity={0.16} color="#ffe6c9" />
+
+      {/*
+        The pooled light the spec asks for, hanging inside the pendant shade
+        `RoomShell` draws. One shadow caster, one bounded map: six avatars and
+        a table are well inside budget, and the contact shadow is most of what
+        sells the felt as a surface objects are resting *on*.
+      */}
       <spotLight
-        position={[0, 2.6, 0]}
-        angle={0.95}
-        penumbra={0.75}
-        intensity={26}
-        distance={9}
-        color="#ffe6b8"
+        position={[0, pendant.y - 0.14, 0]}
+        angle={0.78}
+        penumbra={0.82}
+        intensity={34}
+        distance={7}
+        color="#ffdca8"
         castShadow
         shadow-mapSize={[1024, 1024]}
+        shadow-camera-near={0.4}
+        shadow-camera-far={4}
         shadow-bias={-0.0015}
+      />
+
+      {/*
+        A dim, shadowless wash for the walls. Without it the room shell is a
+        silhouette and the table appears to float in a void - which is the
+        thing the shell was added to fix. Placed on the axis and high, so like
+        everything else in the room it treats every bearing the same.
+      */}
+      <pointLight
+        position={[0, 2.5, 0]}
+        intensity={9}
+        distance={ROOM_RADIUS * 2.2}
+        decay={2}
+        color="#ffb98f"
       />
     </>
   );
@@ -71,6 +110,7 @@ export function Room3D({
   media,
   lookEnabled,
   sensitivity,
+  lookKeys,
   peeking,
   onPeekChange,
   betPreview,
@@ -117,10 +157,17 @@ export function Room3D({
         gl.toneMappingExposure = 1.05;
       }}
     >
-      <color attach="background" args={["#0b0d12"]} />
-      <fog attach="fog" args={["#0b0d12", 4, 12]} />
+      {/* The background is only ever seen through the gap under the table
+          and above the cornice, but it has to agree with the walls or those
+          gaps read as holes cut in the room. */}
+      <color attach="background" args={[PALETTE_FOG]} />
+      {/* Far enough out that the near wall is unaffected and the far one is
+          softened: at four and a half metres across, this is the whole of the
+          depth cue a room this small gets. */}
+      <fog attach="fog" args={[PALETTE_FOG, 3.4, 11]} />
 
       <Lighting />
+      <RoomShell />
       <PokerTable />
 
       {/* Phase 4: the game as objects. Cards on the felt you can pick up and
@@ -134,6 +181,11 @@ export function Room3D({
         onPeekChange={onPeekChange}
       />
       <ChipField snapshot={snapshot} placed={placed} preview={betPreview} />
+
+      {/* Phase 5: the numbers, on the table instead of in a list. Each seat's
+          stack is engraved on the rail in front of it, which from every other
+          seat is directly under that person's face. */}
+      <SeatPlaques snapshot={snapshot} placed={placed} />
       {mySeatRing && (
         <ChipGrabPad
           seat={mySeatRing}
@@ -146,6 +198,7 @@ export function Room3D({
         seat={mySeat}
         lookEnabled={lookEnabled}
         sensitivity={sensitivity}
+        lookKeys={lookKeys}
       />
 
       {/* Spec sections 6 and 12: the face you turn towards gets the top

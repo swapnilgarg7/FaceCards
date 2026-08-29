@@ -11,16 +11,20 @@
  * panel all read this one table, so a shortcut cannot end up documented as one
  * key and handled as another.
  *
- * **W, A, S and D are reserved and must stay unbound.** They are the obvious
- * keys for leaning or shifting seat position later, and a shortcut that has to
- * be taken away from players once they have learned it is worse than one that
- * was never offered. `keybinds.test.ts` fails if anything claims them.
+ * **W, A, S and D turn your head.** They were held back for exactly this and
+ * nothing else has been allowed to claim them since, which is why they were
+ * free when it was time to use them. They are *held*, not pressed, and they
+ * compose with the cursor rather than replacing it: see
+ * `scene/keyboardLook.ts` for what a held look key means and
+ * `useLookKeys` for how the holding is tracked.
  */
-
-export const RESERVED_KEYS = ["w", "a", "s", "d"] as const;
 
 export type KeybindId =
   | "peek"
+  | "lookLeft"
+  | "lookRight"
+  | "lookUp"
+  | "lookDown"
   | "fold"
   | "checkCall"
   | "raise"
@@ -56,11 +60,15 @@ export interface Keybind {
 }
 
 /**
- * Ordered as the settings panel lists them: looking at your hand, the four
- * things you do on your turn, then the ways to size a raise, then the room
- * controls.
+ * Ordered as the settings panel lists them: turning your head and looking at
+ * your hand, the four things you do on your turn, then the ways to size a
+ * raise, then the room controls.
  */
 export const KEYBINDS: readonly Keybind[] = [
+  { id: "lookLeft", key: "a", hold: true, label: "Look left" },
+  { id: "lookRight", key: "d", hold: true, label: "Look right" },
+  { id: "lookUp", key: "w", hold: true, label: "Look up" },
+  { id: "lookDown", key: "s", hold: true, label: "Look down" },
   {
     id: "peek",
     key: " ",
@@ -79,6 +87,28 @@ export const KEYBINDS: readonly Keybind[] = [
   { id: "mute", key: "m", label: "Mute or unmute" },
   { id: "camera", key: "v", label: "Camera on or off" },
 ];
+
+/**
+ * Which way each look key pushes the view, as an axis pair.
+ *
+ * Positive yaw is to the left and positive pitch is up, matching three.js's
+ * rotation signs, so nothing between here and the camera has to remember to
+ * flip anything.
+ */
+export const LOOK_AXES: Readonly<
+  Record<"lookLeft" | "lookRight" | "lookUp" | "lookDown", {
+    yaw: number;
+    pitch: number;
+  }>
+> = {
+  lookLeft: { yaw: 1, pitch: 0 },
+  lookRight: { yaw: -1, pitch: 0 },
+  lookUp: { yaw: 0, pitch: 1 },
+  lookDown: { yaw: 0, pitch: -1 },
+};
+
+/** The four keys that turn your head, in the order the settings panel lists. */
+export const LOOK_KEYBIND_IDS = Object.keys(LOOK_AXES) as (keyof typeof LOOK_AXES)[];
 
 const BY_ID = new Map(KEYBINDS.map((bind) => [bind.id, bind]));
 

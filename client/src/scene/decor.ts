@@ -31,6 +31,16 @@ import { FACE_PLANE_HEIGHT } from "./body.js";
 export const ROOM_RADIUS = 3.6;
 export const ROOM_HEIGHT = 3.05;
 
+/**
+ * Fog and clear colour.
+ *
+ * The background is only ever glimpsed - under the table, and in the sliver
+ * above the cornice - but it has to agree with the velvet or those glimpses
+ * read as holes cut in the room rather than as unlit corners of it. A shade
+ * darker than the wall, which is what an unlit corner is.
+ */
+export const PALETTE_FOG = "#150a13";
+
 /** Dark panelled dado, capped just above the table so it reads under the rail. */
 export const WAINSCOT_HEIGHT = 0.82;
 /** The brass capping rail on top of the panelling. */
