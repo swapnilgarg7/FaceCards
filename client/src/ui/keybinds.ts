@@ -33,6 +33,9 @@ export type KeybindId =
   | "raiseUp"
   | "raiseMin"
   | "raiseMax"
+  | "raisePot"
+  | "raiseHalfPot"
+  | "raiseType"
   | "nextHand"
   | "standings"
   | "settings"
@@ -85,6 +88,15 @@ export const KEYBINDS: readonly Keybind[] = [
   { id: "raiseUp", key: "ArrowRight", label: "Raise the raise" },
   { id: "raiseMin", key: "Home", label: "Minimum raise" },
   { id: "raiseMax", key: "End", label: "Maximum raise" },
+  // The two sizes a player says out loud, on one key each. Stepping up to a
+  // pot-sized bet a blind at a time is thirty presses of an arrow; the arrows
+  // stay for the times the size on screen is already nearly right.
+  { id: "raisePot", key: "p", label: "Size a pot-sized bet" },
+  { id: "raiseHalfPot", key: "p", shift: true, label: "Size a half-pot bet" },
+  // The escape hatch from all of the above: a player who already knows the
+  // number should never have to reach for the mouse to type it, because
+  // reaching for the mouse is what swings the camera.
+  { id: "raiseType", key: "t", label: "Type an exact amount" },
   // Only ever live over a payout, where nothing else on this list can fire:
   // there is no seat on the clock to fold, check or raise for.
   { id: "nextHand", key: "Enter", label: "Skip ahead, then deal the next hand" },

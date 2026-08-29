@@ -910,6 +910,12 @@ h2 {
   border-radius: 10px;
   background: rgba(18, 8, 15, 0.74);
   backdrop-filter: blur(8px);
+  /* Wide enough for the field, the slider and the row of sizes under them, and
+     not one pixel wider. Letting it spread across a 27-inch monitor would put
+     several hundred pixels between the same two sizes on two machines, and a
+     control that moves is a control the hand has to look for. */
+  width: 100%;
+  max-width: 46rem;
 }
 .sizer__field {
   display: flex;
@@ -956,21 +962,142 @@ h2 {
   color: var(--error);
 }
 .sizer__slider {
-  width: 14rem;
+  /* Takes whatever the field and the key hint leave, so the top row is always
+     full and the sizes underneath always begin a new one. */
+  flex: 1 1 9rem;
+  min-width: 6rem;
   max-width: 100%;
   accent-color: var(--accent);
 }
-.sizer__quick {
+
+/* Naming a size and counting one out, side by side on their own row. */
+.sizer__sizes {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem 0.9rem;
+}
+
+/* The sizes a player says out loud, one press each.
+
+   A pill is a label stacked over an amount, and that order is the whole idea:
+   "Pot" is what is being chosen, and 137 is only what it happens to come to on
+   this street. Reading the number is checking the answer, not finding the
+   button. The pill matching the field lights up, so the row doubles as a
+   statement of what is currently loaded. */
+.sizer__presets {
+  display: flex;
+  align-items: stretch;
+  gap: 0.35rem;
+}
+.preset {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.05rem;
+  min-width: 4.2rem;
+  padding: 0.24rem 0.5rem 0.3rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--dim);
+  font: inherit;
+  font-size: 0.64rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease, color 140ms ease;
+}
+.preset:hover {
+  border-color: var(--accent);
+  color: var(--accent-bright);
+}
+.preset:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.preset--on {
+  border-color: var(--accent);
+  background: rgba(217, 180, 81, 0.14);
+  color: var(--accent-bright);
+}
+.preset__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+}
+.preset__amount {
+  color: var(--text);
+  font-family: var(--font-numeric);
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+.preset--on .preset__amount {
+  color: var(--accent-bright);
+}
+
+/* The chips, for the amount nobody has a name for. Tapping the hundred five
+   times is a bet you count rather than compute, which is the one way of sizing
+   that needs neither arithmetic nor a keyboard - and therefore the only one a
+   thumb can drive.
+
+   Drawn as chips, in the table's own denominations and the table's own colours
+   (`scene/chips.ts` owns both), because the entire point is that these are the
+   things already stacked on the felt in front of you. */
+.sizer__tray {
   display: flex;
   align-items: center;
   gap: 0.4rem;
 }
-.btn--quick {
-  padding: 0.28rem 0.5rem;
-  font-size: 0.7rem;
+.chipbtn {
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  border: 2px dashed rgba(255, 255, 255, 0.5);
+  border-radius: 50%;
+  /* Lit from above, like the pendant lights every other chip in the product. */
+  background: radial-gradient(
+      circle at 50% 34%,
+      rgba(255, 255, 255, 0.22),
+      transparent 60%
+    ),
+    var(--chip);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5), inset 0 0 0 3px rgba(0, 0, 0, 0.16);
+  color: #fff;
+  font-family: var(--font-numeric);
+  font-size: 1.02rem;
+  letter-spacing: 0.03em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease,
+    border-color 120ms ease;
+}
+.chipbtn:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent-bright);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.5), inset 0 0 0 3px rgba(0, 0, 0, 0.16);
+}
+/* It has to move under the finger. A chip that does not is a chip the player
+   is not certain they tapped, and an uncertain tap gets tapped again - which
+   on this control does not repeat a press, it doubles a bet. */
+.chipbtn:active {
+  transform: translateY(1px) scale(0.96);
+}
+.chipbtn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.btn--clear {
+  padding: 0.3rem 0.55rem;
+  font-size: 0.66rem;
 }
 .sizer__nudge {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.25rem;
   margin-left: 0.2rem;
@@ -2157,12 +2284,42 @@ textarea {
 :root[data-compact="true"] .sizer__slider {
   width: 100%;
 }
-:root[data-compact="true"] .sizer__quick {
+/* The two ways of picking a size stack rather than sharing a line, and each
+   splits the full width evenly - so every size is a thumb-sized target sitting
+   where it was last hand, rather than where the width of its own number
+   happens to put it. */
+:root[data-compact="true"] .sizer__sizes {
+  gap: 0.4rem;
+}
+:root[data-compact="true"] .sizer__presets,
+:root[data-compact="true"] .sizer__tray {
   width: 100%;
   justify-content: center;
 }
-:root[data-compact="true"] .btn--quick {
-  min-height: 2.3rem;
+:root[data-compact="true"] .sizer__presets {
+  gap: 0.3rem;
+}
+:root[data-compact="true"] .preset {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 2.7rem;
+  padding: 0.26rem 0.2rem 0.3rem;
+  font-size: 0.6rem;
+  letter-spacing: 0.04em;
+}
+:root[data-compact="true"] .preset__amount {
+  font-size: 1.05rem;
+}
+/* 44px and up, which is the smallest thing a thumb hits reliably. These are
+   pressed repeatedly - five hundreds at a time - so a near miss costs the
+   whole count rather than a single press. */
+:root[data-compact="true"] .chipbtn {
+  width: 2.9rem;
+  height: 2.9rem;
+  font-size: 1.15rem;
+}
+:root[data-compact="true"] .btn--clear {
+  min-height: 2.4rem;
 }
 :root[data-compact="true"] .actions--idle {
   gap: 0.5rem;
