@@ -18,9 +18,16 @@ describe("fitFov", () => {
     // The fov is vertical, so a wide window already sees more of the table
     // sideways for free. It is only as the frame narrows that the players
     // either side of you leave the shot, which is what this buys back.
-    expect(fitFov(390, 844)).toBeGreaterThan(fitFov(820, 1180));
-    expect(fitFov(820, 1180)).toBeGreaterThan(fitFov(1024, 768));
-    expect(fitFov(1024, 768)).toBeGreaterThan(fitFov(1440, 900));
+    const widening = [
+      [390, 844], // phone upright
+      [768, 1024], // tablet upright
+      [1024, 768], // tablet sideways
+      [1440, 900], // laptop
+    ].map(([w, h]) => fitFov(w!, h!));
+
+    for (let i = 1; i < widening.length; i++) {
+      expect(widening[i]).toBeLessThan(widening[i - 1]!);
+    }
   });
 
   it("keeps the desktop lens on anything at least as wide as a laptop", () => {
