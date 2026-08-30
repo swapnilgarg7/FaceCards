@@ -153,7 +153,7 @@ export function Lobby({
         value={displayName}
         onChange={(e) => setDisplayName(e.target.value)}
         maxLength={DISPLAY_NAME_MAX_LENGTH}
-        placeholder="optional"
+        placeholder="john"
         autoComplete="off"
         // The one thing an invited guest still has to supply, so put the
         // cursor in it and let Enter do the rest.
