@@ -23,6 +23,7 @@ import {
   TURN_TIMEOUT_MS,
   TablePhase,
   type BuyInIntent,
+  type ClientMessageType,
   type JoinOptions,
   type PlayerInstance,
   type PokerActionIntent,
@@ -51,6 +52,7 @@ import { grantOwnPlayerView } from "../state/view.js";
 import { mintMediaToken } from "../livekit/token.js";
 import { pickAvatar } from "./avatars.js";
 import { decideBuyIn } from "./buyIn.js";
+import { MessageLimiter } from "./messageLimits.js";
 import { normaliseRoomCode } from "./roomCodes.js";
 import { sanitiseDisplayName } from "./names.js";
 
@@ -151,6 +153,17 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
    */
   private readonly timeoutStrikes = new Map<string, number>();
   /**
+   * Per-client, per-message-type budget for the socket.
+   *
+   * The soft target this room has is not an outsider - matchmaking is locked
+   * down in `index.ts` and creating a room is rate-limited per address - it is
+   * somebody who already has a seat and an open console. See
+   * `messageLimits.ts` for what a loop can cost the other seven people at the
+   * table, and why every handler below starts with a budget check rather than
+   * with a state lookup.
+   */
+  private readonly messageLimits = new MessageLimiter();
+  /**
    * Display names of everyone dealt into the hand in flight, captured at the
    * deal.
    *
@@ -214,11 +227,11 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
     // Matchmaking joins by code, so the code must be queryable metadata.
     void this.setMetadata({ code });
 
-    this.onMessage<PokerActionIntent>(ClientMessage.Action, (client, intent) => {
+    this.onIntent<PokerActionIntent>(ClientMessage.Action, (client, intent) => {
       this.handleAction(client, intent);
     });
 
-    this.onMessage(ClientMessage.Ready, (client) => {
+    this.onIntent(ClientMessage.Ready, (client) => {
       const player = this.state.players.get(client.sessionId);
       // Idempotent, and one-way. Re-sending it is a no-op rather than a patch
       // fanned out to the whole table, and there is no "un-ready": once the
@@ -233,11 +246,11 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
       this.considerDealing();
     });
 
-    this.onMessage(ClientMessage.NextHand, (client) => {
+    this.onIntent(ClientMessage.NextHand, (client) => {
       this.handleNextHand(client);
     });
 
-    this.onMessage(ClientMessage.SitOut, (client) => {
+    this.onIntent(ClientMessage.SitOut, (client) => {
       const player = this.state.players.get(client.sessionId);
       // Unchanged is a no-op. `sittingOut` is a public field, so writing it
       // unconditionally would turn one inbound byte into a patch fanned out to
@@ -253,7 +266,7 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
       this.considerContinuing();
     });
 
-    this.onMessage(ClientMessage.SitIn, (client) => {
+    this.onIntent(ClientMessage.SitIn, (client) => {
       const player = this.state.players.get(client.sessionId);
       if (!player || !player.sittingOut) return;
       player.sittingOut = false;
@@ -267,15 +280,49 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
       this.considerDealing();
     });
 
-    this.onMessage<BuyInIntent>(ClientMessage.BuyIn, (client, intent) => {
+    this.onIntent<BuyInIntent>(ClientMessage.BuyIn, (client, intent) => {
       this.handleBuyIn(client, intent);
     });
 
-    this.onMessage(ClientMessage.RequestMediaToken, (client) => {
+    this.onIntent(ClientMessage.RequestMediaToken, (client) => {
       void this.sendMediaToken(client);
     });
 
     console.log(`[room ${code}] created (${this.roomId})`);
+  }
+
+  /**
+   * Register a handler for a client message, behind its budget.
+   *
+   * Every inbound message goes through here, which is the only way it can be
+   * true that nothing expensive runs before the budget is checked. A guard
+   * placed inside a handler - after the `state.players.get`, after the engine
+   * call - has already paid for the frame it is refusing, and `action` is
+   * exactly that shape: it reaches `applyAction` and `legalActions` on every
+   * out-of-turn frame and answers each one with an `ActionRejected`.
+   *
+   * An over-budget message is dropped in silence. Answering would hand a
+   * flooder an amplifier - one inbound frame becoming one outbound frame is
+   * the trade that put `action` on the list in the first place - so the
+   * evidence goes to the log instead, once per client per window.
+   */
+  private onIntent<T = unknown>(
+    type: ClientMessageType,
+    handler: (client: Client, payload: T) => void,
+  ): void {
+    this.onMessage<T>(type, (client, payload) => {
+      if (!this.messageLimits.allow(type, client.sessionId)) {
+        if (this.messageLimits.shouldLog(client.sessionId)) {
+          const player = this.state.players.get(client.sessionId);
+          console.warn(
+            `[room ${this.state.code}] rate-limited "${type}" from` +
+              ` ${player?.displayName ?? client.sessionId}`,
+          );
+        }
+        return;
+      }
+      handler(client, payload);
+    });
   }
 
   override async onJoin(client: Client, options: JoinOptions): Promise<void> {
@@ -416,6 +463,10 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
       this.state.players.delete(client.sessionId);
       this.disconnectedSince.delete(client.sessionId);
       this.timeoutStrikes.delete(client.sessionId);
+      // Their spent budget goes with them. Colyseus can hand out a session id
+      // again, and a new client inheriting somebody else's exhausted window
+      // would be refused its own first action.
+      this.messageLimits.forget(client.sessionId);
       // A showdown row outlives the hand it belongs to by the length of the
       // payout screen, and it is keyed by seat because a departed seat has no
       // session id left to key it by. Freeing the seat in that window would

@@ -133,6 +133,20 @@ export class RateLimiter {
     };
   }
 
+  /**
+   * Drop one key's window.
+   *
+   * Only ever forgives. Used where a key has a known end of life rather than
+   * an expiry - a session id when its client leaves - so that a client handed
+   * a recycled id does not inherit somebody else's spent budget. There is no
+   * matching "spend a key's whole budget" and there must not be: a method that
+   * could punish a key by name is a method that will one day be called on the
+   * wrong one.
+   */
+  forget(key: string): void {
+    this.windows.delete(key);
+  }
+
   /** Forget everything. Tests, and nothing else. */
   reset(): void {
     this.windows.clear();

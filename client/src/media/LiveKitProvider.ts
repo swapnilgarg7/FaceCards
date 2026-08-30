@@ -182,6 +182,16 @@ export class LiveKitProvider implements MediaProvider {
     new Set();
   private readonly stateListeners: Emitter<[MediaConnectionState]> = new Set();
   private readonly audioBlockedListeners: Emitter<[boolean]> = new Set();
+  private readonly localEndedListeners: Emitter<[TrackKind]> = new Set();
+  private readonly deviceErrorListeners: Emitter<[unknown, TrackKind | null]> =
+    new Set();
+  /**
+   * Cleanup for the `ended` listeners attached to the underlying
+   * `MediaStreamTrack`s. Held rather than left to the collector because a
+   * session that toggles its camera a dozen times publishes a dozen tracks,
+   * and a listener per dead track is a listener that fires on nothing forever.
+   */
+  private readonly localTrackCleanup = new Map<TrackKind, () => void>();
   private readonly dataListeners: Emitter<
     [string, DatagramTopic, Uint8Array]
   > = new Set();
@@ -266,6 +276,8 @@ export class LiveKitProvider implements MediaProvider {
     for (const peerId of [...this.remoteVideoEls.keys()]) {
       this.teardownPeer(peerId);
     }
+    for (const cleanup of this.localTrackCleanup.values()) cleanup();
+    this.localTrackCleanup.clear();
     this.detachLocalVideo();
     await room.disconnect();
     room.removeAllListeners();
@@ -292,10 +304,39 @@ export class LiveKitProvider implements MediaProvider {
     else this.attachLocalVideo();
   }
 
+  async restartLocal(opts: PublishOptions): Promise<void> {
+    const room = this.requireRoom();
+    // Down to zero first. After a device is unplugged the publication is still
+    // there holding a dead `MediaStreamTrack`, and asking to enable a track the
+    // SDK already believes is enabled is a no-op - so a recovery that only
+    // called `setCameraEnabled(true)` would appear to succeed and change
+    // nothing. The disable is the half that does the work.
+    if (opts.mic) await room.localParticipant.setMicrophoneEnabled(false);
+    if (opts.camera) {
+      await room.localParticipant.setCameraEnabled(false);
+      this.detachLocalVideo();
+    }
+    // Sequential for the same reason `publishLocal` is: two simultaneous
+    // `getUserMedia` prompts is a reliable way to have a browser drop one.
+    if (opts.mic) await room.localParticipant.setMicrophoneEnabled(true);
+    if (opts.camera) await room.localParticipant.setCameraEnabled(true);
+    this.attachLocalVideo();
+  }
+
   isMuted(kind: TrackKind): boolean {
     const p = this.room?.localParticipant;
     if (!p) return true;
     return kind === "audio" ? !p.isMicrophoneEnabled : !p.isCameraEnabled;
+  }
+
+  onLocalTrackEnded(cb: (kind: TrackKind) => void): Unsubscribe {
+    return subscribe(this.localEndedListeners, cb);
+  }
+
+  onDeviceError(
+    cb: (error: unknown, kind: TrackKind | null) => void,
+  ): Unsubscribe {
+    return subscribe(this.deviceErrorListeners, cb);
   }
 
   getLocalVideo(): HTMLVideoElement | null {
@@ -424,7 +465,9 @@ export class LiveKitProvider implements MediaProvider {
       .on(RoomEvent.TrackUnmuted, this.handleTrackUnmuted)
       .on(RoomEvent.ConnectionStateChanged, this.handleConnectionState)
       .on(RoomEvent.AudioPlaybackStatusChanged, this.handleAudioPlayback)
-      .on(RoomEvent.DataReceived, this.handleData);
+      .on(RoomEvent.DataReceived, this.handleData)
+      .on(RoomEvent.LocalTrackPublished, this.handleLocalTrackPublished)
+      .on(RoomEvent.MediaDevicesError, this.handleDeviceError);
   }
 
   /**
@@ -669,6 +712,46 @@ export class LiveKitProvider implements MediaProvider {
   private readonly handleAudioPlayback = (): void => {
     emit(this.audioBlockedListeners, this.room?.canPlaybackAudio === false);
   };
+
+  /**
+   * Watch a freshly published local track for the device going away.
+   *
+   * Listens to the *platform* `ended` event on the underlying
+   * `MediaStreamTrack` rather than to an SDK event, and that is the point:
+   * `ended` is the browser's own statement that the source is gone for good,
+   * it fires for every cause (unplugged, claimed by another app, revoked at
+   * the OS level), and it does not depend on a vendor's event taxonomy staying
+   * put across a major version. Nothing throws when this happens, which is why
+   * the symptom without it is a still photograph of somebody who is still
+   * talking.
+   */
+  private readonly handleLocalTrackPublished: RoomEventCallbacks["localTrackPublished"] =
+    (publication): void => {
+      const kind: TrackKind =
+        publication.kind === Track.Kind.Audio ? "audio" : "video";
+      const mediaTrack = publication.track?.mediaStreamTrack;
+      if (!mediaTrack) return;
+
+      // A session that toggles its camera a dozen times publishes a dozen
+      // tracks. Drop the previous watcher before taking the new one.
+      this.localTrackCleanup.get(kind)?.();
+
+      const onEnded = (): void => {
+        this.localTrackCleanup.delete(kind);
+        emit(this.localEndedListeners, kind);
+      };
+      mediaTrack.addEventListener("ended", onEnded);
+      this.localTrackCleanup.set(kind, () =>
+        mediaTrack.removeEventListener("ended", onEnded),
+      );
+    };
+
+  private readonly handleDeviceError: RoomEventCallbacks["mediaDevicesError"] =
+    (error, kind): void => {
+      const track: TrackKind | null =
+        kind === "videoinput" ? "video" : kind === "audioinput" ? "audio" : null;
+      emit(this.deviceErrorListeners, error, track);
+    };
 
   private attachLocalVideo(): void {
     const publication = this.room?.localParticipant.getTrackPublication(

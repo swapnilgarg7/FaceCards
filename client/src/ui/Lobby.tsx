@@ -8,6 +8,11 @@ import {
 } from "@facecards/shared";
 import { useServerWake } from "../net/useServerWake.js";
 import {
+  assessSupport,
+  readCapabilities,
+  supportHeadline,
+} from "../support.js";
+import {
   queryMediaPermission,
   requestMediaPermission,
   type MediaPermission,
@@ -77,6 +82,17 @@ export function Lobby({
   });
   const [code, setCode] = useState(initialCode);
   const [permission, setPermission] = useState<MediaPermission>("unknown");
+  /**
+   * What this browser cannot do, probed once.
+   *
+   * In the lobby rather than at the table, for the same reason the permission
+   * prompt is: the worst moment to find out that hardware acceleration is off
+   * is after a 3D room has failed to appear. `useState` with an initialiser
+   * rather than an effect, because the probe creates and destroys a WebGL
+   * context and doing that twice under StrictMode is two contexts against a
+   * browser limit of about sixteen.
+   */
+  const [support] = useState(() => assessSupport(readCapabilities()));
   // Starts the server booting the moment this mounts, so the wait overlaps
   // with filling the form in rather than following it. See net/wake.ts.
   const wake = useServerWake();
@@ -104,7 +120,7 @@ export function Lobby({
     setPermission("asking");
     const result = await requestMediaPermission();
     setPermission(result.state);
-    setPermissionNote(result.message ?? null);
+    setPermissionNote(result.fault?.message ?? null);
   };
 
   /**
@@ -175,6 +191,25 @@ export function Lobby({
     </div>
   );
 
+  /**
+   * What this browser is missing, said once, up front.
+   *
+   * Never a gate, even when the level is "unsupported". Somebody on a locked
+   * down work laptop deserves to be told why the room will not draw rather
+   * than to be told they may not try - and the one case that genuinely cannot
+   * work, an insecure origin, is a case where refusing the button would not
+   * help either. See `support.ts`.
+   */
+  const supportNote = supportHeadline(support);
+  const banner = supportNote && (
+    <p
+      className={`note ${support.level === "unsupported" ? "note--error" : ""}`}
+      role={support.level === "unsupported" ? "alert" : "status"}
+    >
+      {supportNote}
+    </p>
+  );
+
   const status = (
     <>
       {busy && <p className="note">Connecting…</p>}
@@ -191,6 +226,7 @@ export function Lobby({
         </p>
 
         <ServerWaking status={wake} />
+        {banner}
 
         <form className="lobby__invited" onSubmit={submitJoin}>
           <p className="lobby__room">
@@ -230,6 +266,7 @@ export function Lobby({
       <p className="lobby__sub">Sit down at a table with your friends.</p>
 
       <ServerWaking status={wake} />
+      {banner}
 
       {nameField}
       {picker}

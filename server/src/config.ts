@@ -1,4 +1,5 @@
 import { DEFAULT_CLIENT_PORT, DEFAULT_SERVER_PORT } from "@facecards/shared";
+import { assertSecureOrigins } from "./tls.js";
 
 /**
  * Environment, read once and validated once, so no other module has to guess
@@ -60,3 +61,13 @@ export const config = {
 } as const;
 
 export const isProduction = config.nodeEnv === "production";
+
+/**
+ * A production server that would carry hole cards in the clear does not start.
+ *
+ * Deliberately here, at module load, rather than inside a route or a startup
+ * banner: by the time anything is listening it is too late for a refusal to be
+ * the safe outcome. See `tls.ts` for why `CORS_ORIGINS` is the thing checked
+ * and not the listener itself.
+ */
+assertSecureOrigins(config.corsOrigins, isProduction);

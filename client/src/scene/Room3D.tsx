@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, type RefObject } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { ACESFilmicToneMapping, PerspectiveCamera } from "three";
 import { Avatar } from "../avatars/Avatar.js";
@@ -16,6 +16,8 @@ import { FIXTURES, PALETTE_FOG, ROOM_RADIUS } from "./decor.js";
 import type { LookAxes } from "./keyboardLook.js";
 import { assignSeats, seatLayout } from "./layout.js";
 import { fitFov } from "./mobileView.js";
+import { capStream, type QualityProfile } from "./quality.js";
+import { FrameSampler } from "./useQuality.js";
 
 /**
  * The room: table, lights, one avatar per remote player, and the local
@@ -47,11 +49,23 @@ export interface Room3DProps {
   /** How the pointer turns the head. See `SeatedCamera`. */
   lookMode?: "hover" | "drag";
   /**
-   * A phone. Shadows and multisampling come off and the pixel ratio is capped
-   * harder, because a handset GPU spends its whole budget on the faces - which
-   * are the product - long before it gets to a contact shadow under a chip.
+   * How much this machine is asked to draw.
+   *
+   * Replaces the `lite` flag phase 5 carried. `lite` was a single boolean that
+   * meant "this is a phone", and it was right about phones and silent about
+   * everything else - a five-year-old laptop, a machine with hardware
+   * acceleration turned off, a browser that has been throttled because the
+   * battery is low. All of those need the same three savings a phone needs,
+   * and none of them are a phone. See `scene/quality.ts`.
    */
-  lite?: boolean;
+  quality: QualityProfile;
+  /**
+   * Where each frame's duration goes. The automatic fallback's only input.
+   *
+   * Passed in rather than owned here because the tier it produces has to reach
+   * the settings panel, which lives outside the Canvas.
+   */
+  onFrame(dtMs: number): void;
 }
 
 /**
@@ -79,7 +93,7 @@ function FitLens() {
   return null;
 }
 
-function Lighting({ lite }: { lite: boolean }) {
+function Lighting({ quality }: { quality: QualityProfile }) {
   const pendant = FIXTURES.find((f) => f.id === "pendant")!;
 
   return (
@@ -115,8 +129,8 @@ function Lighting({ lite }: { lite: boolean }) {
         intensity={34}
         distance={7}
         color="#ffdca8"
-        castShadow={!lite}
-        shadow-mapSize={[1024, 1024]}
+        castShadow={quality.shadows}
+        shadow-mapSize={[quality.shadowMapSize, quality.shadowMapSize]}
         shadow-camera-near={0.4}
         shadow-camera-far={4}
         shadow-bias={-0.0015}
@@ -152,7 +166,8 @@ export function Room3D({
   canPushChips,
   onChipGrab,
   lookMode = "hover",
-  lite = false,
+  quality,
+  onFrame,
 }: Room3DProps) {
   const players = snapshot.players;
 
@@ -183,18 +198,48 @@ export function Room3D({
   // Multisampling is a property of the WebGL context, so it is decided when
   // the context is created and can never be changed afterwards. R3F builds its
   // renderer exactly once for the life of a `<Canvas>` and quietly ignores a
-  // later `antialias` - so writing `antialias={!lite}` inline would read as a
-  // live setting while being a dead one, which is worse than not having it.
+  // later `antialias` - so writing `antialias={quality.antialias}` inline would
+  // read as a live setting while being a dead one, which is worse than not
+  // having it.
   //
   // Captured at first render instead, which is the moment it is actually read,
-  // and correct for the case that matters: `useViewport` measures the screen
-  // before anything mounts, so a phone creates its context without MSAA in the
-  // first place. A device that later crosses the threshold - a tablet turned
-  // sideways - keeps whatever it started with, and still gets the two savings
-  // that *can* be applied live below. Rebuilding the renderer to recover the
-  // third would throw away the whole scene and every texture in it, which
-  // costs far more than the multisampling is worth.
-  const antialias = useRef(!lite).current;
+  // and correct for the case that matters: the probe in `useQuality` runs
+  // before anything mounts, so a phone or a software rasteriser creates its
+  // context without MSAA in the first place. A machine the *frame clock* later
+  // demotes keeps whatever it started with, and still gets the three savings
+  // that can be applied live - pixel ratio, shadows and the video ceiling.
+  // Rebuilding the renderer to recover the fourth would throw away the whole
+  // scene and every texture in it, which costs far more than the multisampling
+  // is worth, and would do it at the exact moment the machine is struggling.
+  const antialias = useRef(quality.antialias).current;
+
+  /**
+   * The attention director's request, capped by the tier.
+   *
+   * A ceiling, never a floor: a face the director wants at `low` stays at
+   * `low`. This is the lever that matters most on a weak machine, because
+   * eight simultaneous video decodes cost more than everything else in the
+   * frame put together - and it is the one saving that is paid on the CPU,
+   * where a laptop under thermal pressure has the least left to give.
+   *
+   * Wrapped here rather than inside `AttentionDirector` because that component
+   * decides *where you are looking*, which is a question about the scene, and
+   * this is a question about the machine. Keeping them apart means the
+   * hysteresis in `attention.ts` stays testable without a quality tier in it.
+   */
+  const mediaSetQuality = media.setQuality;
+  const setQuality = useCallback(
+    (peerId: string, wanted: "high" | "medium" | "low") => {
+      mediaSetQuality(peerId, capStream(wanted, quality));
+    },
+    // The *method*, not the `media` object. `useMedia` returns a fresh object
+    // every render, so depending on it would give this a new identity every
+    // render too - and `AttentionDirector` takes it as a prop and reads it
+    // inside `useFrame`, which is the one place in the scene that must not be
+    // re-subscribed sixty times a second. `media.setQuality` is itself a
+    // stable `useCallback`, for exactly this reason.
+    [mediaSetQuality, quality],
+  );
 
   return (
     <Canvas
@@ -203,12 +248,12 @@ export function Room3D({
       // thing in the frame. A phone keeps the faces and loses the shadow.
       // This one does take effect on a later render: R3F reapplies it to the
       // existing renderer's shadow map rather than rebuilding anything.
-      shadows={!lite}
+      shadows={quality.shadows}
       // Cap the pixel ratio: a Retina MacBook Air renders four times the
       // pixels for a difference nobody sees on a stylised scene, and the 60
       // FPS target is a design constraint rather than a phase-6 cleanup. A
       // phone at DPR 3 is nine times the pixels, on a tenth of the GPU.
-      dpr={lite ? [1, 1.5] : [1, 1.75]}
+      dpr={quality.dpr}
       camera={{ fov: fitFov(window.innerWidth, window.innerHeight), near: 0.05, far: 40 }}
       gl={{ antialias, powerPreference: "high-performance" }}
       onCreated={({ gl }) => {
@@ -226,7 +271,10 @@ export function Room3D({
       <fog attach="fog" args={[PALETTE_FOG, 3.4, 11]} />
 
       <FitLens />
-      <Lighting lite={lite} />
+      {/* The frame clock the automatic fallback reads. Renders nothing, and
+          costs two additions against a ref per frame. See `quality.ts`. */}
+      <FrameSampler sample={onFrame} />
+      <Lighting quality={quality} />
       <RoomShell />
       <PokerTable />
 
@@ -276,7 +324,7 @@ export function Room3D({
 
       {/* Spec sections 6 and 12: the face you turn towards gets the top
           simulcast layer and the rest step down. Renders nothing. */}
-      <AttentionDirector peers={attentionPeers} setQuality={media.setQuality} />
+      <AttentionDirector peers={attentionPeers} setQuality={setQuality} />
 
       {others
         .map((player) => {

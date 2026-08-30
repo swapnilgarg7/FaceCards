@@ -83,6 +83,48 @@ export interface MediaProvider {
   isMuted(kind: TrackKind): boolean;
 
   /**
+   * Throw away the local tracks and acquire them again.
+   *
+   * The single recovery verb, and the reason it is not just `publishLocal`
+   * called twice: after a device is unplugged the publication is still there
+   * holding a dead `MediaStreamTrack`, and `setCameraEnabled(true)` on a track
+   * the SDK believes is already enabled is a no-op. Recovery has to go down to
+   * zero first, which is what makes this its own method rather than a flag.
+   *
+   * Rejects with whatever the platform threw, unclassified. `media/faults.ts`
+   * turns that into a sentence; this boundary stays vendor-neutral by not
+   * having an opinion about what the error means.
+   */
+  restartLocal(opts: PublishOptions): Promise<void>;
+
+  /**
+   * A published local track stopped producing on its own.
+   *
+   * The webcam was unplugged, the lid was closed on an external camera, or the
+   * OS handed the device to something else. Nothing fails and nothing throws:
+   * the track simply ends, the face plane freezes on its last frame, and
+   * without this the only symptom is a photograph of somebody who is still
+   * talking. Phase 6 names this case ("device unplugged mid-session") and it
+   * is the one that is invisible without an explicit signal.
+   */
+  onLocalTrackEnded(cb: (kind: TrackKind) => void): Unsubscribe;
+
+  /**
+   * The provider tried to open a device by itself and could not.
+   *
+   * Distinct from a rejected `publishLocal`, which the caller is already
+   * awaiting: this fires for the acquisitions the SDK initiates on its own -
+   * reacquiring a track after a device change, or restoring one after a
+   * reconnect - where there is no promise for the failure to land on and the
+   * symptom would otherwise be a camera that quietly never comes back.
+   *
+   * `kind` is null when the platform did not say which device it was about.
+   */
+  onDeviceError(
+    cb: (error: unknown, kind: TrackKind | null) => void,
+  ): Unsubscribe;
+
+  /**
    * The local camera preview element. Mirrored for self-view, which is what
    * people expect of their own image and wrong for everyone else's.
    */

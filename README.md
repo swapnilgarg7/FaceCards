@@ -58,6 +58,7 @@ Deploying to LiveKit Cloud and Render: `docs/DEPLOYMENT.md`.
 | `npm run verify:phase3` | Six clients, a drop, a reconnect, and a sit-out |
 | `npm run verify:phase4` | Sound assets, then a hand replayed through the drawing layer |
 | `npm run verify:phase5` | Geometry, fixtures, idles and font assets. Needs nothing running |
+| `npm run verify:phase6` | Permission recovery, the GPU ladder, socket budgets, TLS and the leak audit. Needs nothing running |
 | `npm run build` | Production client bundle |
 | `npm run livekit:up` / `:down` / `:logs` | Local SFU |
 
@@ -91,6 +92,18 @@ so the decoration can never creep in over the game; asserts that no fixture in
 the room glows inside the band of height a face occupies; sweeps two hours of
 every archetype's idle against its amplitude ceilings; and checks the shipped
 fonts against `docs/ASSET-CREDITS.md` and `styles.css` in both directions.
+
+`npm run verify:phase6` also needs **nothing running**. It is the reliability
+check, and almost everything it asserts is about a machine that is not this
+one — a denied camera, an unplugged webcam, a GPU that cannot keep up, a second
+tab, a plaintext deploy — so it checks the *properties* that make those cases
+handled rather than trying to reproduce them. It replays all eleven errors
+`getUserMedia` can throw and asserts that a Retry button appears if and only if
+retrying could work; it simulates a throttled GPU by feeding the quality ladder
+slow frames and asserts it settles rather than oscillating; it floods the
+message limiter; it re-runs the private-state audit as a closed set over the
+wire side rather than as a spot check. See `docs/BROWSERS.md` for the parts
+that need a person.
 
 `npm run verify:phase3` needs only `npm run dev`, and takes about a minute.
 It also carries the regression guard for the clock: a player who is *not* on
@@ -435,5 +448,68 @@ Known boundaries left to later phases, on purpose:
   as a king from two metres away at an angle, and a crude figure does that
   worse than a clear device
 
-Next: **phase 6, reliability** — permission flows, the browser matrix, quality
-tiers, network edge cases and a full protocol re-audit. See `plan.md`.
+## Phase 6 status
+
+Verified by unit tests, `npm run typecheck`, `npm run build` and
+`npm run verify:phase6` (56 checks). Like `verify:phase5` it needs **nothing
+running**, for a different reason: almost every failure this phase handles
+happens on a machine that is not this one, so what is checkable is the property
+rather than the incident.
+
+- [x] **Five permission paths, all recoverable without a reload.** Refused up
+      front, no device, unplugged mid-session, taken by another app, and
+      revoked from the browser's own settings while seated. Each classifies to
+      a fault carrying a *recovery verb* (`media/faults.ts`), and the banner
+      offers a Retry if and only if retrying could work
+- [x] **A denial gets a sentence, not a button.** Nothing a page does can turn
+      a denied permission into a granted one, so a Retry there fails silently
+      every time it is pressed. `retryable` is derived from the verb rather
+      than stored, which makes that pairing impossible to get wrong
+- [x] **Plugging a webcam back in retries by itself.** `devicechange` is
+      diffed rather than acted on, so a pair of headphones changes nothing and
+      a camera arriving while a retryable fault is up recovers with no click
+- [x] **A quality setting plus an automatic fallback** (spec section 12).
+      Three tiers, each one object; a probe for where to start; and a frame
+      clock that moves off it within two seconds. Demotion is fast, promotion
+      is six times slower, and a session demoted twice stops climbing — which
+      is what makes a borderline machine settle instead of alternating
+- [x] **The fallback never turns a face off.** What it spends is pixel ratio,
+      shadows and the top simulcast rung. Even the floor still shows everybody
+- [x] **Every client message has a budget**, per client and per type, checked
+      *before* the handler rather than inside it. `buy-in` was the amplifier
+      that equality checks could not fix; `action` reached the poker engine on
+      every out-of-turn frame and answered each with a rejection
+- [x] **Production TLS is asserted at both ends, not documented.** A server
+      whose `CORS_ORIGINS` is not https refuses to start; a client bundle
+      pointed at `ws://` throws at module load. Hole cards ride that socket
+- [x] **The same table in two tabs is caught and named.** Not a server
+      question — two tabs are two honest sessions — but two publications of one
+      microphone, which is the loudest failure the product has
+- [x] **The browser is probed, never version-checked.** `support.ts` asks the
+      platform in the lobby and says one line; `docs/BROWSERS.md` is the matrix
+      and the by-hand test plan
+- [x] **Full protocol re-audit.** The server sends exactly two kinds of
+      message, both addressed to one client, neither able to carry a card; no
+      rejection reason can quote one; the datagram channel still carries one
+      topic; nothing records or stores any A/V
+
+Known boundaries, stated rather than papered over:
+
+- **Safari cannot see a permission being revoked.** It implements no `camera`
+  or `microphone` descriptor for the Permissions API, so there is nothing to
+  subscribe to and no workaround. The other four denial paths work there, being
+  driven by exceptions and by the platform `ended` event. See
+  `docs/BROWSERS.md`
+- **The 60 FPS and one-hour-six-player criteria still need people.** The ladder
+  is proven to settle; what it settles *at* on a particular MacBook Air is a
+  measurement, and a full evening without a stuck hand is six friends
+- **No client keep-alive was added.** The phase asked for one; the repo already
+  had a better answer in `.github/workflows/keep-server-awake.yml`, which pings
+  every five minutes from outside. A second mechanism inside the session would
+  hold awake only a server that was already awake
+- **No Supabase ping either**, because nothing is wired to Supabase yet. Room
+  metadata still lives in process memory
+
+Next: **phase 7, private beta** — real hosting, real links, real poker nights,
+and LiveKit Cloud so friends outside the dev machine's network can connect.
+See `plan.md`.

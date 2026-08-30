@@ -5,6 +5,9 @@ import { useFaceTracking } from "../avatars/useFaceTracking.js";
 import type { UseMedia } from "../media/useMedia.js";
 import type { RoomSnapshot } from "../net/useRoom.js";
 import { Room3D } from "../scene/Room3D.js";
+import { useQuality } from "../scene/useQuality.js";
+import { MediaFaultBanner } from "./MediaFaultBanner.js";
+import { useTabLock } from "../net/useTabLock.js";
 import { ActionBar } from "./ActionBar.js";
 import { FaceDebug } from "./FaceDebug.js";
 import { HandHud } from "./HandHud.js";
@@ -118,6 +121,16 @@ export function Table({
   // and state that changed.
   const audio = useTableAudio(snapshot);
 
+  // How much this machine is asked to draw: what the player chose, and what
+  // the frame clock has since decided. See `scene/quality.ts`.
+  const quality = useQuality(view.handheld);
+
+  // Whether this table is already open in another tab of this browser. Not a
+  // server question - two tabs are two honest sessions - but the loudest
+  // failure in the product, because both of them publish the same microphone.
+  // See `net/tabLock.ts`.
+  const duplicateTab = useTabLock(snapshot.code);
+
   // Pushing chips towards the pot. Every value it can land on is one the
   // server published as legal, so a gesture cannot aim at an illegal action;
   // the intent goes down the same `act()` path the buttons use.
@@ -201,7 +214,8 @@ export function Table({
           // A finger has no position until it is down, so it cannot point at
           // anything. Drag to turn instead. See `scene/mobileView.ts`.
           lookMode={view.touch ? "drag" : "hover"}
-          lite={view.handheld}
+          quality={quality.profile}
+          onFrame={quality.sample}
         />
       </div>
 
@@ -310,6 +324,19 @@ export function Table({
         </div>
       )}
 
+      {/* Two tabs of one browser at one table. The server is not wrong - they
+          are two sessions with two seats - but they are also two publications
+          of the same microphone half a second apart, which is the loudest and
+          least diagnosable failure this product has. Advisory on purpose:
+          nothing is closed automatically, because a stale claim from a tab
+          that crashed must never lock somebody out of their own table. */}
+      {duplicateTab && !settingsOpen && (
+        <div className="banner banner--error hud__banner" role="alert">
+          This table is already open in another tab. Close one, or you will
+          hear yourself twice.
+        </div>
+      )}
+
       {media.audioBlocked && !settingsOpen && !reconnecting && (
         <button
           className="banner hud__banner"
@@ -317,6 +344,15 @@ export function Table({
         >
           {view.touch ? "Tap to enable sound" : "Click to enable sound"}
         </button>
+      )}
+
+      {/* The player's own camera or microphone, and the way back. Under the
+          reconnect banner in priority because a socket that is down means
+          nothing is being updated at all, and above everything else because a
+          person who cannot be seen or heard is not at the table in the sense
+          this product means. */}
+      {!settingsOpen && !reconnecting && (
+        <MediaFaultBanner media={media} className="hud__banner" />
       )}
 
       {/* Self-view. You have no avatar, because you are sitting in that seat,
@@ -436,6 +472,7 @@ export function Table({
           media={media}
           audio={audio}
           sensitivity={sensitivity}
+          quality={quality}
           sittingOut={me?.sittingOut ?? false}
           onSitOutChange={onSitOutChange}
           onSensitivityChange={setSensitivity}

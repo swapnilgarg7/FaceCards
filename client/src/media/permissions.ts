@@ -1,3 +1,11 @@
+import {
+  classifyMediaError,
+  insecureContextFault,
+  revokedFault,
+  type MediaFault,
+  type TrackKind,
+} from "./faults.js";
+
 /**
  * Camera and microphone permission, asked for in the lobby rather than at the
  * table (spec section 3: landing, name, avatar, permission, seated).
@@ -15,6 +23,12 @@
  * point is the grant, not the stream. LiveKit opens its own tracks a moment
  * later and, because permission is already granted, does so without a second
  * prompt.
+ *
+ * Phase 6 added the third thing this file does: **watching**. A grant is not a
+ * fact, it is a fact *for now* - somebody can revoke camera access from the
+ * browser's site settings while sitting at a table, and when they do, nothing
+ * fails, nothing throws, and the last decoded frame stays on their avatar's
+ * face. `watchMediaPermission` is the only signal that says otherwise.
  */
 
 export type MediaPermission =
@@ -30,17 +44,30 @@ export type MediaPermission =
 
 export interface PermissionResult {
   state: MediaPermission;
-  /** One line, safe to show. Never the raw exception. */
-  message?: string;
+  /**
+   * What went wrong, classified. Null on success.
+   *
+   * Carries the recovery verb as well as the sentence, which is the part the
+   * UI cannot work out for itself: a denial and a busy device produce very
+   * similar-looking failures and need completely different buttons. See
+   * `faults.ts`.
+   */
+  fault?: MediaFault;
 }
+
+/** Both tracks. This product wants a face and a voice, not one of them. */
+const BOTH: readonly TrackKind[] = ["audio", "video"];
+
+/** The Permissions API descriptors, which are not in every `lib.dom`. */
+const DESCRIPTORS = ["camera", "microphone"] as const;
 
 /**
  * What the browser already knows, without prompting.
  *
  * The Permissions API is the only way to distinguish "will prompt" from
  * "already granted" without side effects, and it is not everywhere: Firefox
- * has never supported the `camera` descriptor. An unsupported query is
- * "unknown", which is also the honest answer.
+ * has never supported the `camera` descriptor, and Safari supports neither.
+ * An unsupported query is "unknown", which is also the honest answer.
  */
 export async function queryMediaPermission(): Promise<MediaPermission> {
   if (!navigator.mediaDevices?.getUserMedia) return "unavailable";
@@ -50,9 +77,8 @@ export async function queryMediaPermission(): Promise<MediaPermission> {
 
   try {
     const states = await Promise.all(
-      (["camera", "microphone"] as const).map((name) =>
-        // The descriptor names are not in every lib.dom, and querying an
-        // unsupported one throws rather than resolving.
+      DESCRIPTORS.map((name) =>
+        // Querying an unsupported descriptor throws rather than resolving.
         permissions.query({ name: name as PermissionName }).then((s) => s.state),
       ),
     );
@@ -75,13 +101,10 @@ export async function queryMediaPermission(): Promise<MediaPermission> {
  */
 export async function requestMediaPermission(): Promise<PermissionResult> {
   if (!navigator.mediaDevices?.getUserMedia) {
-    return {
-      state: "unavailable",
-      // Overwhelmingly the cause in development: `getUserMedia` needs a secure
-      // context, and a bare LAN IP is not one even though localhost is.
-      message:
-        "This browser will not share a camera here. A secure context (https, or localhost) is required.",
-    };
+    // Not an exception to classify: on an insecure origin the API is simply
+    // absent. Overwhelmingly the cause in development, where a bare LAN
+    // address is not a secure context even though `localhost` is.
+    return { state: "unavailable", fault: insecureContextFault() };
   }
 
   try {
@@ -92,24 +115,72 @@ export async function requestMediaPermission(): Promise<PermissionResult> {
     for (const track of stream.getTracks()) track.stop();
     return { state: "granted" };
   } catch (err) {
-    const name = err instanceof DOMException ? err.name : "";
-    if (name === "NotAllowedError" || name === "SecurityError") {
-      return {
-        state: "denied",
-        message:
-          "Camera and microphone were blocked. You can still sit down, but nobody will see or hear you until you allow them in the browser's site settings.",
-      };
-    }
-    if (name === "NotFoundError" || name === "OverconstrainedError") {
-      return {
-        state: "unavailable",
-        message:
-          "No camera or microphone found. You can still sit down and watch.",
-      };
-    }
-    return {
-      state: "denied",
-      message: "Could not open the camera or microphone.",
-    };
+    const fault = classifyMediaError(err, BOTH);
+    // "Unavailable" is reserved for the cases where there is nothing to grant.
+    // Everything else is a refusal as far as the lobby is concerned, and the
+    // fault carries the distinction that actually matters - whether a button
+    // would help.
+    const state: MediaPermission =
+      fault.kind === "no-devices" || fault.kind === "insecure"
+        ? "unavailable"
+        : "denied";
+    return { state, fault };
   }
+}
+
+/**
+ * Watch for permission being taken away, or given back, mid-session.
+ *
+ * This is the phase-6 case that has no other symptom. Revoking camera access
+ * from the browser's own site settings does not fail a call or end a track in
+ * a way anything else here notices - the `PermissionStatus` flips underneath a
+ * running session and the avatar's face keeps showing whichever frame was up.
+ *
+ * `onLost` fires with the tracks that went to `denied`; `onRegained` fires when
+ * everything is back to `granted`, which is what lets a warning come down
+ * without a reload once somebody has fixed it in another tab.
+ *
+ * Returns a no-op unsubscribe where the Permissions API is not available,
+ * which is Safari and Firefox - so on those browsers a revocation is noticed
+ * only when something next fails. That is a real gap and it is the platform's:
+ * there is no other way to ask.
+ */
+export function watchMediaPermission(handlers: {
+  onLost(fault: MediaFault): void;
+  onRegained(): void;
+}): () => void {
+  const permissions = navigator.permissions;
+  if (!permissions?.query) return () => {};
+
+  let cancelled = false;
+  const cleanups: (() => void)[] = [];
+
+  void (async () => {
+    for (const name of DESCRIPTORS) {
+      try {
+        const status = await permissions.query({ name: name as PermissionName });
+        if (cancelled) return;
+        const kind: TrackKind = name === "camera" ? "video" : "audio";
+        const onChange = (): void => {
+          if (status.state === "denied") handlers.onLost(revokedFault([kind]));
+          // Only "granted" stands a warning down. "prompt" means the browser
+          // has reset to asking, which is not the same as having access - and
+          // treating it as recovery would take the message away from somebody
+          // who still has no camera.
+          else if (status.state === "granted") handlers.onRegained();
+        };
+        status.addEventListener("change", onChange);
+        cleanups.push(() => status.removeEventListener("change", onChange));
+      } catch {
+        // An unsupported descriptor. Nothing to watch, and nothing to report:
+        // a browser that will not answer the question is not a browser with a
+        // problem.
+      }
+    }
+  })();
+
+  return () => {
+    cancelled = true;
+    for (const cleanup of cleanups) cleanup();
+  };
 }

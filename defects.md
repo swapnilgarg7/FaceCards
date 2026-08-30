@@ -31,7 +31,7 @@ server-derived and survives a drop.
 to the session, so a rejoin returns to the same row. Until then the standings
 are honest for a table nobody leaves, and only for that.
 
-## 2. MEDIUM — no rate limit on any client message or HTTP route
+## 2. FIXED (phase 6) — no rate limit on any client message or HTTP route
 
 `server/src/rooms/PokerRoom.ts` `onCreate` handlers; `server/src/index.ts`
 `POST /api/rooms`, `GET /api/rooms/:code`
@@ -55,12 +55,36 @@ are honest for a table nobody leaves, and only for that.
   creates a room that lives at least `ROOM_EMPTY_GRACE_MS` with
   `autoDispose = false`.
 
-**Fix:** a per-client token bucket in `onCreate`, a per-IP bucket on both HTTP
-routes, and a cooldown of roughly one a minute on `request-media-token`. Return
-404 for a malformed code as well as an unknown one, so the two are
-indistinguishable.
+**Fixed.** The HTTP half went in with phase 3 (`RateLimiter`, per address, on
+both routes plus a live-room ceiling). The socket half is phase 6:
+`server/src/rooms/messageLimits.ts` gives every client message a per-client,
+per-type fixed window, and `PokerRoom.onIntent` is the single registration path
+so the budget is checked *before* the handler rather than inside it — a guard
+after the `state.players.get` has already paid for the frame it refuses.
 
-## 3. LOW — production TLS is documented but not asserted
+Three things about the fix are worth keeping:
+
+- **Per type, not per socket.** One shared bucket would mean a player who
+  bought in six times could not then fold, which turns a limiter into a way of
+  freezing somebody out of their own hand.
+- **The refusal is silent.** Answering would hand the flooder an amplifier, and
+  one inbound frame becoming one outbound frame is exactly the trade that put
+  `action` on this list in the first place. The log gets one line per client
+  per window instead.
+- **`forget` on leave.** Colyseus can hand out a session id again, and a new
+  client inheriting an exhausted window would be refused its own first action.
+
+`request-media-token` is six a minute rather than one, which is still far below
+a signing loop and above anything a real client does — it asks once per session,
+and the server sends the first one unprompted.
+
+Not done: `GET /api/rooms/:code` still returns 400 for a malformed code and 404
+for an unknown one, so the two remain distinguishable. It is a weak oracle
+(a malformed code is one that could never exist, so it leaks nothing about
+which rooms are live) and the limiter is what actually bounds the brute force,
+but the two responses could still be collapsed.
+
+## 3. FIXED (phase 6) — production TLS is documented but not asserted
 
 `server/src/config.ts`, `client/src/net/endpoints.ts`, `render.yaml`
 
@@ -69,10 +93,17 @@ it. `VITE_SERVER_WS_URL` is baked in at build time with a `ws://localhost:2567`
 fallback, and `CORS_ORIGINS` is a free-form list with no scheme check, so a
 misconfigured deploy ships plaintext silently — and hole cards ride that socket.
 
-**Fix:** when `isProduction`, throw on any `corsOrigins` entry that is not
-`https:`; on the client, throw at module load if `import.meta.env.PROD` and the
-socket URL is not `wss:`. The `isProduction && !livekit.configured` warning in
-`index.ts` is the right precedent.
+**Fixed**, as described, in `server/src/tls.ts` and `client/src/net/endpoints.ts`.
+Both throw rather than warn, and both exempt loopback so a production build can
+still be run locally to reproduce something.
+
+Both halves are needed and they catch different mistakes: the server terminates
+plain HTTP behind Render's proxy and cannot see what scheme a browser used, and
+the client cannot see what the server was configured with. What each *can*
+check is what an operator typed at it. The server also rejects a wildcard
+origin and an entry that is not a URL at all, and reports every problem at once
+rather than one per restart — an operator fixing a comma-separated list against
+a platform whose deploys take minutes is a miserable half hour otherwise.
 
 ## 4. LOW — the dealer puck is not drawn on a dead button
 
@@ -90,7 +121,28 @@ or two after someone leaves, the table has no visible button. Fixing it means
 placing the puck from the seat *ring* rather than from the occupied seats, which
 is a scene change and wants a screenshot to judge.
 
-## 5. LOW — `onReconnect` admits a seatless client rather than refusing
+## 5. LOW — Safari cannot see a permission being revoked mid-session
+
+`client/src/media/permissions.ts` (`watchMediaPermission`)
+
+Four of the five permission paths are driven by an exception or by the platform
+`ended` event and work everywhere. The fifth — somebody revoking camera access
+from the browser's own site settings while sitting at a table — has no such
+signal: nothing fails, nothing throws, and the `PermissionStatus` flips
+underneath a running session. The only way to notice is to subscribe to that
+status, and **Safari implements neither the `camera` nor the `microphone`
+descriptor**, so there is nothing to subscribe to. Firefox is the same.
+
+Symptom on those browsers: the avatar shows a still frame of somebody who is
+still talking, with no banner, until something else fails and raises a fault of
+its own.
+
+**No fix available.** There is no other way to ask the platform. Polling
+`getUserMedia` would be worse than the bug — it re-prompts, flashes the capture
+light, and can itself fail for four unrelated reasons. Recorded in
+`docs/BROWSERS.md` so it is a known limitation rather than a mystery.
+
+## 6. LOW — `onReconnect` admits a seatless client rather than refusing
 
 Already addressed: `onReconnect` now throws when there is no `Player`, which
 Colyseus converts to a clean `FAILED_TO_RECONNECT` leave. Kept here only so the
@@ -113,6 +165,16 @@ Worth carrying forward: **a leaked reconnection token lets the holder forcibly
 close the live client and take over the seat and its hole-card view**, so that
 token must never be logged, persisted, or put in a URL. Today the SDK keeps it
 in memory only.
+
+**The duplicate-tab channel is not a new leak surface.** Phase 6 added a
+`BroadcastChannel` (`client/src/net/tabLock.ts`) so two tabs of one browser at
+one table can notice each other. It is same-origin, reaches only other tabs of
+this site, and carries exactly `{ kind, code }` — a room code that is already in
+that same browser's address bar. It must never carry the reconnection token: a
+channel is not a URL and not a log, but it is adjacent to both, and the token
+would hand a listener the seat and the hole-card view with it.
+`verify:phase6` asserts the message type stays closed and that the file does
+not mention a token.
 
 **A departed seat's showdown is published.** `mirrorResult` now writes a
 `Reveal` for a seat whose player left mid-hand while all-in. Those cards are

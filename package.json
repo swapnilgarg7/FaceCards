@@ -24,7 +24,8 @@
     "verify:phase2": "tsx scripts/verify-phase2.mjs",
     "verify:phase3": "tsx scripts/verify-phase3.mjs",
     "verify:phase4": "tsx scripts/verify-phase4.mjs",
-    "verify:phase5": "tsx scripts/verify-phase5.mjs"
+    "verify:phase5": "tsx scripts/verify-phase5.mjs",
+    "verify:phase6": "tsx scripts/verify-phase6.mjs"
   },
   "devDependencies": {
     "@colyseus/sdk": "0.17.43",

@@ -667,6 +667,20 @@ h2 {
   cursor: default;
 }
 
+/* A banner that carries its own way out.
+   The gap is what stops "Retry" reading as part of the sentence, and the row
+   wraps because these messages are two lines wide on a phone and a button
+   pushed off the end of one is a recovery nobody can reach. */
+.banner--action {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.banner--action > .btn {
+  flex: none;
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));

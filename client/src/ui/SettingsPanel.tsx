@@ -3,6 +3,9 @@ import { KEYBINDS, LOOK_KEYBIND_IDS, keyLabel, keybind } from "./keybinds.js";
 import type { UseTableAudio } from "../audio/useTableAudio.js";
 import type { UseMedia } from "../media/useMedia.js";
 import { DEFAULT_SENSITIVITY } from "../scene/lookCurve.js";
+import { QUALITY_SETTINGS, type QualitySetting } from "../scene/quality.js";
+import type { UseQuality } from "../scene/useQuality.js";
+import { MediaFaultBanner } from "./MediaFaultBanner.js";
 import { useView } from "./useViewport.js";
 
 /**
@@ -17,6 +20,20 @@ import { useView } from "./useViewport.js";
  */
 
 const SENSITIVITY_KEY = "facecards.look-sensitivity";
+
+/**
+ * Names for the quality settings.
+ *
+ * Deliberately not "Ultra / High / Medium / Low": there are three tiers and
+ * the top one is what an ordinary laptop gets, so calling it anything grander
+ * would invite people to hunt for a setting that is not there.
+ */
+const QUALITY_LABELS: Record<string, string> = {
+  auto: "Auto",
+  high: "High",
+  medium: "Medium",
+  low: "Low",
+};
 
 /**
  * A settings value that forgets itself on every reload is a bug with extra
@@ -51,6 +68,8 @@ export interface SettingsPanelProps {
   /** Table sound: chips, cards and the room bed. Never the voices. */
   audio: UseTableAudio;
   sensitivity: number;
+  /** The quality tier, what the player chose, and what the frame clock says. */
+  quality: UseQuality;
   /** Dealt out of the next hand. Server-owned; this is what it says. */
   sittingOut: boolean;
   onSitOutChange(sittingOut: boolean): void;
@@ -65,6 +84,7 @@ export function SettingsPanel({
   media,
   audio,
   sensitivity,
+  quality,
   sittingOut,
   onSitOutChange,
   onSensitivityChange,
@@ -121,7 +141,44 @@ export function SettingsPanel({
               {touch ? "Tap to enable sound" : "Click to enable sound"}
             </button>
           )}
+          {/* The same banner the table shows, repeated here on purpose. The
+              table's copy is suppressed while this panel is open, and this is
+              also where somebody arrives after going to fix a permission in
+              the browser's own settings - so it has to be reachable from the
+              menu rather than only from the room behind it. */}
+          <MediaFaultBanner media={media} />
           {media.error && <p className="note note--error">{media.error}</p>}
+          <p className="note">
+            Nothing you say or show here is recorded or stored, by this app or
+            by anybody at the table. Both of these are reversible at any
+            moment, from here or with a key.
+          </p>
+        </section>
+
+        <section className="settings__section">
+          <h3>Graphics</h3>
+          <div className="settings__row" role="group" aria-label="Graphics quality">
+            {QUALITY_SETTINGS.map((option) => (
+              <button
+                key={option}
+                className={`btn${quality.setting === option ? " btn--primary" : ""}`}
+                aria-pressed={quality.setting === option}
+                onClick={() => quality.choose(option as QualitySetting)}
+              >
+                {QUALITY_LABELS[option]}
+              </button>
+            ))}
+          </div>
+          <p className="note">
+            {quality.setting === "auto"
+              ? `Watching the frame rate and adjusting. Currently ${QUALITY_LABELS[quality.autoTier]}.`
+              : "Fixed. Automatic adjustment is off until this is set back to Auto."}
+          </p>
+          <p className="note">
+            Lower settings spend less on shadows and pixels so that the faces
+            keep moving, which is the one thing this is all for. Even the
+            lowest still shows everybody.
+          </p>
         </section>
 
         <section className="settings__section">
