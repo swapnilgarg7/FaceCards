@@ -33,7 +33,12 @@ export interface GateState {
   seated: number;
   /** Ready players still needed before anything can be dealt. */
   needed: number;
-  /** Who else has not pressed Play yet. Empty when it is only this player. */
+  /**
+   * Who else the table is still waiting on. Only seats that could actually
+   * press Play: a dropped laptop or a seat sitting out is not somebody about
+   * to click, and naming them would read as the table being stuck on a person
+   * who is not coming. Empty when it is only this player.
+   */
   waitingOn: string[];
 }
 
@@ -47,22 +52,47 @@ export function startGate(
   const started = snapshot.handNumber > 0;
   const canPlay = !!me && !me.ready;
 
+  const waitingOn = snapshot.players
+    .filter((p) => !p.ready && p.sessionId !== me?.sessionId && canStillPlay(p))
+    .map((p) => p.displayName);
+
   return {
-    // Two reasons to hold the table. Either this player has not said they are
-    // ready - in which case nothing else matters, because they are not in the
-    // game - or everyone here has and there are still not enough of them.
+    // Three reasons to hold the table. This player has not said they are ready
+    // - in which case nothing else matters, because they are not in the game -
+    // or everyone here has and there are still not enough of them, or the
+    // table is only waiting on the friends who have not clicked yet.
+    //
+    // That third one has to be here, not just `needed > 0`. The server holds
+    // the *first* deal open for the whole room rather than firing two seconds
+    // after the second Play, so a player who is ready early can now be waiting
+    // twenty seconds for the rest of the table. Without this they would spend
+    // it looking at empty felt with nothing on screen saying why, and the
+    // honest answer - "Waiting for Bea, Cal and Dev" - is already computed.
     //
     // Deliberately not shown once the table can deal: the two seconds between
-    // "ready" and the first card belong to the action bar saying "Dealing",
-    // not to a gate that has already been satisfied.
-    show: !!me && (canPlay || (!started && needed > 0)),
+    // the last "ready" and the first card belong to the action bar saying
+    // "Dealing", not to a gate that has already been satisfied.
+    show:
+      !!me &&
+      (canPlay || (!started && (needed > 0 || waitingOn.length > 0))),
     canPlay,
     started,
     ready,
     seated,
     needed,
-    waitingOn: snapshot.players
-      .filter((p) => !p.ready && p.sessionId !== me?.sessionId)
-      .map((p) => p.displayName),
+    waitingOn,
   };
+}
+
+/**
+ * Whether this seat could still press Play if it wanted to.
+ *
+ * Mirrors the server's own rule for whom the first deal waits on. A seat that
+ * is dropped, sitting out, or out of chips is settled either way, so the table
+ * is not waiting on it and should not say that it is.
+ */
+function canStillPlay(seat: SeatSnapshot): boolean {
+  if (!seat.connected) return false;
+  if (seat.sittingOut) return false;
+  return seat.stack + seat.pendingBuyIn > 0;
 }

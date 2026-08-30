@@ -4,7 +4,6 @@ import {
   BIG_BLIND,
   ClientMessage,
   DISCONNECTED_TURN_TIMEOUT_MS,
-  HAND_START_DELAY_MS,
   MAX_PLAYERS,
   MAX_STACK,
   MIN_PLAYERS,
@@ -34,12 +33,14 @@ import {
   forfeit,
   legalActions,
   nextBlinds,
+  seatsOwingBlind,
   startHand,
   type Action,
   type BlindPositions,
   type HandState,
 } from "../poker/index.js";
 import { secureRandomInt } from "../rng.js";
+import { dealDelayMs } from "./firstDeal.js";
 import {
   NO_SEAT,
   clearHand,
@@ -92,6 +93,12 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
   override autoDispose = false;
   private disposeTimer: NodeJS.Timeout | undefined;
   private dealTimer: NodeJS.Timeout | undefined;
+  /**
+   * When the pending deal fires, as a wall clock. Only read to decide whether
+   * a fresh `considerDealing()` would bring the deal *forward*; a countdown
+   * that has already started is never pushed back by someone else clicking.
+   */
+  private dealAt = 0;
   private turnTimer: NodeJS.Timeout | undefined;
 
   /** Seat indices currently taken. Seats are fixed for a session. */
@@ -946,9 +953,40 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
 
   /** Deal if a hand can start and one is not already running or scheduled. */
   private considerDealing(): void {
-    if (this.hand || this.dealTimer) return;
+    if (this.hand) return;
     if (this.eligiblePlayers().length < MIN_PLAYERS) return;
-    this.scheduleDeal(HAND_START_DELAY_MS);
+
+    const hasDealt = this.previousBlinds !== null;
+
+    // Once the table has played a hand, a pending deal is left strictly alone,
+    // as it always was. The timer in front of a table that has just finished a
+    // hand is the payout screen, and it is measured in the tens of seconds
+    // people spend talking about the hand they just played. Someone sitting in
+    // or buying in during it must not cut that short.
+    if (hasDealt) {
+      if (this.dealTimer) return;
+      this.scheduleDeal(dealDelayMs([], true));
+      return;
+    }
+
+    const delay = dealDelayMs(
+      [...this.state.players.values()].map((player) => ({
+        ready: player.ready,
+        connected: player.connected,
+        sittingOut: player.sittingOut,
+        funded: player.stack + player.pendingBuyIn > 0,
+      })),
+      false,
+    );
+
+    // Before the first hand it is the opposite: the grace is running *because*
+    // the table is not all here, every Play press comes back through this
+    // method, and the only useful thing a press can do to the countdown is cut
+    // it short. Restarting on each would push the deal further away from a
+    // table that is getting readier, so that the last friend to click would be
+    // the one who delayed it.
+    if (this.dealTimer && Date.now() + delay >= this.dealAt) return;
+    this.scheduleDeal(delay);
   }
 
   /** Everyone who has pressed Play, whatever else is true of them. */
@@ -1022,8 +1060,10 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
 
   private scheduleDeal(delayMs: number): void {
     if (this.dealTimer) clearTimeout(this.dealTimer);
+    this.dealAt = Date.now() + delayMs;
     this.dealTimer = setTimeout(() => {
       this.dealTimer = undefined;
+      this.dealAt = 0;
       this.deal();
     }, delayMs);
   }
@@ -1130,11 +1170,16 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
       this.handNames.set(player.seat, player.displayName);
     }
 
-    // Everyone else at the table just watched a blind go past without paying
-    // it, and that - not sitting out, not busting, not rebuying - is what owing
-    // one *is*. Recording it here means a seat that changes its mind between
-    // two deals waits for nothing, and a seat that sat five hands out cannot
-    // step back in one place past the blinds.
+    // Everyone else at the table just watched a blind go past. Whether that
+    // costs them a wait is `seatsOwingBlind`: a blind that went past an empty
+    // chair does, a blind that went past a seat which was ready, connected and
+    // funded does not, because the only thing holding that seat out was a debt
+    // it was already paying. Charging it twice is what stretched "wait one
+    // hand" into "wait until the big blind has walked the entire ring", which
+    // at seven-handed meant six hands of watching. Recording it here means a
+    // seat that changes its mind between two deals waits for nothing, and a
+    // seat that sat five hands out cannot step back in one place past the
+    // blinds.
     //
     // **No exemption for a dropped player**, and that is a deliberate reversal.
     // Sparing them read as generosity - their seat, stack and cards are all
@@ -1148,9 +1193,14 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
     // What a dropped player keeps is everything that matters: the seat, the
     // chips, the cards and a minute to come back. What they pay is the same
     // thing anyone else pays for missing hands, which is a wait for the blind.
+    const owing = seatsOwingBlind(
+      [...this.state.players.values()].map((player) => player.seat),
+      eligible.map((player) => player.seat),
+      arrangement.dealt,
+    );
     this.state.players.forEach((player) => {
       if (seated.has(player.seat)) return;
-      player.owesBlind = true;
+      player.owesBlind = owing.has(player.seat);
     });
 
     mirrorHoleCards(this.hand, bySeat);

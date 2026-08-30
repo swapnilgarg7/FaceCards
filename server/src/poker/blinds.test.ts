@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { nextBlinds, type BlindPositions, type BlindSeat } from "./blinds.js";
+import {
+  nextBlinds,
+  seatsOwingBlind,
+  type BlindPositions,
+  type BlindSeat,
+} from "./blinds.js";
 
 /** Seats 0..n-1, all ready, none owing, unless overridden. */
 function table(
@@ -392,5 +397,40 @@ describe("hostile churn, fuzzed", () => {
 
     // Guard against the fuzz silently arranging almost nothing.
     expect(arrangements).toBeGreaterThan(3000);
+  });
+});
+
+describe("who owes a blind after a hand is arranged", () => {
+  it("charges a seat that was away when the deal came round", () => {
+    // Seat 3 sat out, so it was never eligible: a blind went past an empty
+    // chair and it waits for the next one.
+    expect(seatsOwingBlind([0, 1, 2, 3], [0, 1, 2], [0, 1, 2])).toEqual(
+      new Set([3]),
+    );
+  });
+
+  it("does not charge a seat that was ready and held out by the wait", () => {
+    // Seat 3 is ready, connected and funded; `nextBlinds` held it out because
+    // it already owed a blind. Charging it again is the bug that made the wait
+    // last a whole orbit instead of one hand.
+    expect(seatsOwingBlind([0, 1, 2, 3], [0, 1, 2, 3], [0, 1, 2])).toEqual(
+      new Set(),
+    );
+  });
+
+  it("never charges a seat that was dealt in", () => {
+    expect(seatsOwingBlind([0, 1, 2], [0, 1, 2], [0, 1, 2])).toEqual(new Set());
+  });
+
+  it("clears the whole waiting room in one hand at a seven-handed table", () => {
+    // The reported failure: two seats started the evening, five more were
+    // ready and watching. All five were eligible, one was let in by the big
+    // blind, and the other four must not be sent to the back of the queue.
+    const seats = [0, 1, 2, 3, 4, 5, 6];
+    expect(seatsOwingBlind(seats, seats, [0, 1, 2])).toEqual(new Set());
+  });
+
+  it("keeps charging a dropped seat, reconnection window or not", () => {
+    expect(seatsOwingBlind([0, 1, 2], [0, 1], [0, 1])).toEqual(new Set([2]));
   });
 });

@@ -140,3 +140,66 @@ describe("joining a table already playing", () => {
     expect(startGate(table([]), undefined).show).toBe(false);
   });
 });
+
+describe("holding the first deal for friends who have not clicked", () => {
+  it("keeps the gate up for a ready player while the table is not", () => {
+    // Two of seven ready is enough to deal, and used to deal two seconds
+    // later. The server now waits for the room, so the gate has to say so
+    // rather than leaving five people out of the hand with no explanation.
+    const me = seat({ sessionId: "a", displayName: "Ann", ready: true });
+    const gate = startGate(
+      table([
+        me,
+        seat({ sessionId: "b", displayName: "Bea", ready: true }),
+        seat({ sessionId: "c", displayName: "Cal" }),
+        seat({ sessionId: "d", displayName: "Dev" }),
+      ]),
+      me,
+    );
+    expect(gate.show).toBe(true);
+    expect(gate.canPlay).toBe(false);
+    expect(gate.waitingOn).toEqual(["Cal", "Dev"]);
+  });
+
+  it("drops the gate the moment the last friend presses Play", () => {
+    const me = seat({ sessionId: "a", ready: true });
+    const gate = startGate(
+      table([
+        me,
+        seat({ sessionId: "b", ready: true }),
+        seat({ sessionId: "c", ready: true }),
+      ]),
+      me,
+    );
+    expect(gate.show).toBe(false);
+    expect(gate.waitingOn).toEqual([]);
+  });
+
+  it("never waits on a seat that could not press Play", () => {
+    const me = seat({ sessionId: "a", ready: true });
+    const gate = startGate(
+      table([
+        me,
+        seat({ sessionId: "b", ready: true }),
+        seat({ sessionId: "c", displayName: "Cal", connected: false }),
+        seat({ sessionId: "d", displayName: "Dev", sittingOut: true }),
+        seat({ sessionId: "e", displayName: "Eve", stack: 0, pendingBuyIn: 0 }),
+      ]),
+      me,
+    );
+    expect(gate.waitingOn).toEqual([]);
+    expect(gate.show).toBe(false);
+  });
+
+  it("does not hold a table that is already playing for a late arrival", () => {
+    const me = seat({ sessionId: "a", ready: true });
+    const gate = startGate(
+      table(
+        [me, seat({ sessionId: "b", ready: true }), seat({ sessionId: "c" })],
+        4,
+      ),
+      me,
+    );
+    expect(gate.show).toBe(false);
+  });
+});

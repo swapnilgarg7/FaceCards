@@ -214,6 +214,54 @@ was whatever the promises settled in. A future edit that moves a `pickCaption`
 back inside `shootPerson` would silently desynchronise the table again, and
 nothing would fail.
 
+## 9. FIXED — a seven-handed table dealt cards to two people, then let them in one per hand
+
+`server/src/rooms/PokerRoom.ts` `considerDealing`, `deal`;
+`server/src/poker/blinds.ts` `nextBlinds`
+
+Two independent bugs that compounded into the worst first impression the
+product can make: seven friends sit down, and four of them watch.
+
+**The first deal fired two seconds after the second Play.** `considerDealing`
+scheduled on `HAND_START_DELAY_MS` the moment `MIN_PLAYERS` were eligible.
+Seven people do not press Play simultaneously — they press it across ten or
+fifteen seconds of finding a camera — so the two fastest clickers started a
+heads-up hand and everybody else was dealt out of it. "Enough players" and
+"the table" are the same set for every hand except the first one, and the code
+only knew the first meaning.
+
+**Then the waiting rule stretched from one hand to a whole orbit.** Every seat
+not dealt into a hand was assigned `owesBlind = true`, and `nextBlinds` admits
+exactly one waiter per hand: the seat the big blind happens to land on. So the
+five who missed hand 1 joined back at one per hand — six hands before the last
+one saw a card. The rule is real casino procedure and it is there for a real
+reason, but it is a rule about *being away*, and it was being charged to people
+who were sitting in their chairs, ready, connected, funded, watching a hand
+they had asked to be in. Being held out by a debt was itself re-incurring the
+debt.
+
+Neither half shows up in a two-player test, which is why both survived.
+
+**Fixed.**
+
+- `server/src/rooms/firstDeal.ts` (`dealDelayMs`, pure, unit-tested) holds the
+  table's *first* deal for `FIRST_HAND_GRACE_MS` (20s) unless every seat that
+  could press Play already has, in which case the normal two-second beat runs.
+  Pressing Play only ever shortens that countdown, never restarts it, or the
+  last friend to click would be the one who delayed the deal. Every hand after
+  the first is untouched, and a pending payout timer is left strictly alone so
+  that sitting in during the results screen cannot cut it short.
+- `seatsOwingBlind` in `blinds.ts` charges the wait for absence only: not dealt
+  in **and** not eligible. A seat held out by the arrangement clears its debt
+  and is dealt in on the very next hand, so the wait is bounded at one hand
+  instead of one orbit. A dropped player is still charged — that reversal is
+  argued at the call site and is unchanged.
+- `client/src/ui/startGate.ts` keeps the gate up while the table is still
+  waiting on someone, naming them. With a twenty-second grace, a player who is
+  ready early would otherwise stare at empty felt with nothing saying why. It
+  only names seats that could actually press Play, matching the server's rule,
+  so the table is never shown waiting on a closed laptop.
+
 ## Not defects, recorded so they are not re-litigated
 
 **A Poker Moment publishes no card that was not already public.** The feature

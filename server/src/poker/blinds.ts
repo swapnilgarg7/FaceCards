@@ -216,3 +216,44 @@ function arrange(
     bigBlindSeat,
   };
 }
+
+/**
+ * Who owes a blind once a hand has been arranged.
+ *
+ * The waiting rule at the top of this file exists to stop one specific move:
+ * stepping in one place past the blinds, playing the cheapest seat at the
+ * table, and stepping out again before paying. That move requires *being
+ * away*. It is not something a player can do by sitting in their chair,
+ * connected, with chips, ready, watching a hand they asked to be in.
+ *
+ * So the debt is charged for absence, never for exclusion:
+ *
+ *  - **Not dealt in and not eligible** - sitting out, dropped, or broke when
+ *    the deal came round. A blind went past an empty chair. They wait for it.
+ *  - **Not dealt in but eligible** - the arrangement above held them out, and
+ *    the only reason it can is a debt they were already carrying. Charging
+ *    them again for the hand that debt cost them is what turns "wait for the
+ *    big blind" into "wait for the big blind to walk the whole ring", because
+ *    `nextBlinds` admits exactly one waiter per hand: the seat the big blind
+ *    landed on. At a seven-handed table that is six hands of watching your
+ *    friends play, which is the opposite of the product.
+ *
+ * The debt therefore always clears in one hand, and a seat waits at most one
+ * hand to join a table already in play. What it buys is unchanged: nobody
+ * steps into a running hand for free the instant they arrive.
+ */
+export function seatsOwingBlind(
+  seats: readonly number[],
+  eligible: readonly number[],
+  dealt: readonly number[],
+): Set<number> {
+  const wasEligible = new Set(eligible);
+  const wasDealt = new Set(dealt);
+  const owing = new Set<number>();
+  for (const seat of seats) {
+    if (wasDealt.has(seat)) continue;
+    if (wasEligible.has(seat)) continue;
+    owing.add(seat);
+  }
+  return owing;
+}
