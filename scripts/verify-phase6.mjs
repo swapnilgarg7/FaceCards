@@ -471,7 +471,7 @@ const HOLE_CARD_ALLOWED = new Set([
   "shared/src/state.ts",
 ]);
 const holeCardFiles = execSync(
-  'git grep -l -i "holecard" -- server shared',
+  'git grep --untracked -l -i "holecard" -- server shared',
   { cwd: root, encoding: "utf8" },
 )
   .split(/\r?\n/)
@@ -521,18 +521,112 @@ check(
 );
 
 // No A/V is recorded or persisted, anywhere (spec section 16).
-const clientSources = [
-  "client/src/media/LiveKitProvider.ts",
-  "client/src/media/useMedia.ts",
-  "client/src/media/permissions.ts",
-  "client/src/avatars/useFaceTexture.ts",
-  "client/src/avatars/faceTracker.ts",
-]
-  .map((path) => read(...path.split("/")))
-  .join("\n");
+//
+// This used to read five named files, which is a spot check, and it showed:
+// it passed unchanged when Poker Moments started taking stills off the same
+// elements, because `client/src/moments/` was not on the list and `toBlob` was
+// not in the pattern. So it is a closed set now, diffed against an allowlist.
+//
+// The rule the product actually makes is narrower than "never touch a webcam
+// pixel", and has to be stated as such: **a single still, held in memory, in
+// exactly one file, never recorded, never persisted, never sent anywhere.**
+const stripComments = (source) =>
+  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*/g, "");
+
+/**
+ * Files under `client/src` whose *code* matches `pattern`.
+ *
+ * Two things it does that the obvious one-liner does not, both of which were
+ * caught by this check failing on its own first draft:
+ *
+ *  - `--untracked`, because `git grep` searches tracked files only, and the
+ *    file most likely to break a rule is the new one in the branch nobody has
+ *    committed yet. Without it every check below passed on an empty result.
+ *  - comments are stripped before the verdict. Every one of these patterns is
+ *    a word a careful file will *mention* - "there is no upload, no
+ *    MediaRecorder" is a comment worth having, and a rule that forbids writing
+ *    it down is a rule that teaches people to stop explaining themselves.
+ *
+ * `git grep` is still the first pass, because it is fast and narrows the tree
+ * to a handful of candidates; it is the second pass that decides.
+ */
+const clientMatches = (pattern) => {
+  let candidates;
+  try {
+    candidates = execSync(
+      `git grep --untracked -l -E ${JSON.stringify(pattern)} -- client/src`,
+      { cwd: root, encoding: "utf8" },
+    )
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0 && !line.endsWith(".test.ts"));
+  } catch (err) {
+    // Exit 1 is "no file matched", which is the answer every one of these
+    // checks is hoping for. Anything else - a bad pattern, a missing path - is
+    // a check that did not run, and a check that did not run must never print
+    // a tick. The first draft swallowed both, and two of the patterns below
+    // were silently malformed while the suite reported green.
+    if (err?.status === 1) return [];
+    throw new Error(`git grep failed for /${pattern}/: ${err?.stderr ?? err}`);
+  }
+  const re = new RegExp(pattern);
+  return candidates.filter((file) =>
+    re.test(stripComments(readFileSync(join(root, file), "utf8"))),
+  );
+};
+
+// A continuous stream of anybody's camera or microphone. There is no
+// legitimate use of any of these in this product, at all, ever.
+const recorders = clientMatches("MediaRecorder|captureStream");
 check(
-  "nothing records or stores camera, microphone or voice data",
-  !/MediaRecorder|captureStream\(|toDataURL|indexedDB/.test(clientSources),
+  "nothing in the client can record camera, microphone or voice",
+  recorders.length === 0,
+  recorders.join(", "),
+);
+
+// Pixels taken out of a video element. Allowed, in exactly one file, because a
+// Poker Moment is a still photograph of a face that is already on everyone
+// else's screen. Adding a second file here is a deliberate edit to a rule.
+const PIXEL_ALLOWED = new Set(["client/src/moments/capture.ts"]);
+const unexpectedPixels = clientMatches(
+  "drawImage|toDataURL|toBlob|createObjectURL|createImageBitmap",
+).filter((file) => !PIXEL_ALLOWED.has(file));
+check(
+  "only one file may take pixels out of a camera frame",
+  unexpectedPixels.length === 0,
+  unexpectedPixels.join(", "),
+);
+
+// And that file may not put them anywhere they could outlive the tab or reach
+// another machine. This is the whole of the "nothing is recorded, uploaded or
+// saved" promise the settings panel makes to a player, as a diff rather than
+// as a habit.
+const capture = read("client", "src", "moments", "capture.ts");
+check(
+  "captured frames are never uploaded, stored or persisted",
+  !/fetch\(|XMLHttpRequest|sendBeacon|WebSocket|localStorage|sessionStorage|indexedDB|showSaveFilePicker/.test(
+    capture,
+  ),
+);
+
+// Every object URL that is minted has a way back. A blob URL holds its blob
+// alive until it is revoked, so a `createObjectURL` with no matching revoke is
+// a webcam frame that survives for the rest of the session by accident.
+check(
+  "and every frame that is kept can be given back",
+  /URL\.createObjectURL/.test(capture) &&
+    /URL\.revokeObjectURL/.test(capture) &&
+    /export function releaseShot/.test(capture),
+);
+
+// Nothing anywhere in the client writes to durable storage. `localStorage` is
+// deliberately not in this list: it holds a look sensitivity and two booleans,
+// and is checked separately. This is about anything that could hold bytes.
+const stores = clientMatches("indexedDB|caches.open|showSaveFilePicker");
+check(
+  "nothing in the client writes media to durable storage",
+  stores.length === 0,
+  stores.join(", "),
 );
 
 // The duplicate-tab channel is same-origin and reaches every tab of this site.

@@ -75,6 +75,32 @@ export interface HandResult {
   net: Map<number, number>;
 }
 
+/**
+ * One decision a player made, recorded as it happened.
+ *
+ * Not read by any rule. It exists so the *story* of a hand can be derived
+ * after the fact - who was doing the betting, who called the big one - by
+ * `story.ts`, without any of that reasoning having to live in a client that
+ * only ever saw the parts of the hand it was shown.
+ *
+ * `paid` is what the action put in at the time. A raise that is later
+ * refunded as uncalled is recorded at its full size, because what the table
+ * *watched* someone do is the thing a caption is about; the chips are
+ * accounted for in `totalCommitted`, which is the number the pot is built
+ * from. Calls are never refunded, so `biggestCall` is exact.
+ */
+export interface HandAction {
+  street: Street;
+  seat: number;
+  type: ActionType;
+  /** Chips this action put in front of the seat. Zero for a fold or check. */
+  paid: number;
+  /** What the seat had committed for the round once it had acted. */
+  to: number;
+  /** A bet or raise that set a new level for everyone else to answer. */
+  aggressive: boolean;
+}
+
 export interface HandState {
   handNumber: number;
   button: number;
@@ -98,6 +124,11 @@ export interface HandState {
   lastRaiseSize: number;
   actingSeat: number | null;
   pots: Pot[];
+  /**
+   * Every action taken this hand, in order. Append-only, read by nothing that
+   * decides anything. See `HandAction`.
+   */
+  history: HandAction[];
   result: HandResult | null;
 }
 
@@ -319,6 +350,35 @@ function refundUncalled(state: HandState): void {
   // Getting chips back can un-do an all-in: a player whose over-bet was only
   // partly called still has a stack behind.
   if (top.status === "allin" && top.stack > 0) top.status = "active";
+}
+
+/**
+ * Append to `state.history`. Called after the action has been applied, so
+ * `me.committed` is already the level the seat ended the turn on.
+ *
+ * `state.phase` is read here rather than passed, and it is read *before*
+ * `settle` runs: settling can deal the next street, and an action recorded
+ * afterwards would be filed under the street it caused rather than the one it
+ * was made on.
+ */
+function record(
+  state: HandState,
+  me: HandSeat,
+  type: ActionType,
+  paid: number,
+  aggressive: boolean,
+): void {
+  // `finish` is the only thing that sets "complete", and it is never reached
+  // with an action still to record.
+  const street = state.phase === "complete" ? "river" : state.phase;
+  state.history.push({
+    street,
+    seat: me.seat,
+    type,
+    paid,
+    to: me.committed,
+    aggressive,
+  });
 }
 
 function closeRound(state: HandState): void {
@@ -550,6 +610,7 @@ export function startHand(options: StartHandOptions): HandState {
     lastRaiseSize: bigBlind,
     actingSeat: null,
     pots: [],
+    history: [],
     result: null,
   };
 
@@ -621,6 +682,10 @@ export function forfeit(state: HandState, seat: number): void {
   const wasOnTheClock = state.actingSeat === seat;
   me.status = "folded";
   me.hasActed = true;
+  // Recorded like any other fold. It was not their choice, but the table
+  // watched the seat go out on this street, and a story told without it would
+  // have a player who never acted somehow winning the pot.
+  record(state, me, "fold", 0, false);
 
   if (wasOnTheClock) {
     settle(state, seat);
@@ -648,6 +713,7 @@ export function applyAction(
     case "fold": {
       me.status = "folded";
       me.hasActed = true;
+      record(state, me, "fold", 0, false);
       break;
     }
 
@@ -656,6 +722,7 @@ export function applyAction(
         return { ok: false, reason: `cannot check facing ${legal.callAmount}` };
       }
       me.hasActed = true;
+      record(state, me, "check", 0, false);
       break;
     }
 
@@ -663,11 +730,13 @@ export function applyAction(
       if (!legal.canCall) return { ok: false, reason: "nothing to call" };
       commitChips(me, legal.callAmount);
       me.hasActed = true;
+      record(state, me, "call", legal.callAmount, false);
       break;
     }
 
     case "raise": {
       const amount = action.amount;
+      const before = me.committed;
       if (!legal.canRaise) return { ok: false, reason: "cannot raise" };
       if (typeof amount !== "number" || !Number.isInteger(amount)) {
         return { ok: false, reason: "raise needs a whole-chip amount" };
@@ -711,6 +780,11 @@ export function applyAction(
 
       state.currentBet = amount;
       me.hasActed = true;
+      // Aggressive whatever its size. `lastRaiseSize` decides whether betting
+      // reopens, which is a rule; what a caption cares about is that this seat
+      // was the one doing the pushing, and a sub-minimum all-in shove is the
+      // most aggressive thing anybody does all evening.
+      record(state, me, "raise", amount - before, true);
       break;
     }
 

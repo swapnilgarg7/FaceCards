@@ -177,6 +177,86 @@ export const Reveal = schema(
   "Reveal",
 );
 
+/**
+ * What `HandNote.category` means on the wire.
+ *
+ * A restatement of the engine's own `HandCategory`, and deliberately a
+ * restatement rather than an import: `server/src/poker/` is pure by
+ * construction and imports nothing outside itself, which is the property that
+ * makes its tests sufficient. So the numbering lives here, where both ends can
+ * see it, and `evaluate.test.ts` asserts the two agree - a drift is a failing
+ * test rather than a client that quietly starts calling flushes bluffs.
+ *
+ * -1 is not in the set. It is the "this seat never showed" sentinel, and the
+ * distinction is carried by `HandNote.showed` rather than by reading a
+ * negative number as a category.
+ */
+export const HandStrength = {
+  HighCard: 0,
+  Pair: 1,
+  TwoPair: 2,
+  ThreeOfAKind: 3,
+  Straight: 4,
+  Flush: 5,
+  FullHouse: 6,
+  FourOfAKind: 7,
+  StraightFlush: 8,
+} as const;
+
+export type HandStrengthValue =
+  (typeof HandStrength)[keyof typeof HandStrength];
+
+/** `HandNote.category` for a seat that never showed. */
+export const NO_HAND_STRENGTH = -1;
+
+/**
+ * What happened to one seat in the hand that just ended.
+ *
+ * The *facts* behind a Poker Moment, and deliberately only the facts: whether
+ * a hand was a bluff, a suckout or a cooler is a question about poker, and
+ * poker is decided in `server/src/poker/`. The client picks a caption and a
+ * treatment from these; it never re-derives one of them from cards.
+ *
+ * Written only at a payout, cleared at the next deal, and subject to the same
+ * rule as everything else here: **nothing in this schema may say anything
+ * about a card that is not already public in `reveals`.** `category` and
+ * `rivered` are therefore populated only for a seat that actually showed -
+ * for everyone else they are -1 and false, which is why `showed` exists as
+ * its own field rather than being inferred from a sentinel. A hand won on
+ * folds carries no hand-strength signal at all, because "he was bluffing"
+ * about cards nobody saw is a leak with a joke on top of it.
+ */
+export const HandNote = schema(
+  {
+    seat: "uint8",
+    /** Chips this seat won across every pot. Zero for a loser. */
+    won: "uint32",
+    /** Chips this seat put in across the whole hand. */
+    committed: "uint32",
+    /** Finished the hand with every chip in the middle. */
+    allIn: "boolean",
+    /** Finished the hand with nothing behind. */
+    busted: "boolean",
+    /** Made the last bet or raise of the hand. Public: everyone saw it. */
+    aggressor: "boolean",
+    /** The largest single call this seat made. Public for the same reason. */
+    biggestCall: "uint32",
+    /** This seat reached a showdown, so its cards are in `reveals`. */
+    showed: "boolean",
+    /**
+     * `HandCategory` of the hand it showed, or -1 if it never showed.
+     *
+     * Redundant with `reveals` - the cards are already there - and published
+     * anyway, because classifying seven cards into "that was a bluff" is a
+     * poker rule and the client is not allowed to own one.
+     */
+    category: "int8",
+    /** Was ahead after the turn and lost on the river. Showdown seats only. */
+    rivered: "boolean",
+  },
+  "HandNote",
+);
+
 /** One pot and who can win it. Side pots appear here in ladder order. */
 export const PotEntry = schema(
   {
@@ -273,11 +353,30 @@ export const PokerState = schema(
     reveals: { array: Reveal },
     /** One line summarising how the last hand ended. Display only. */
     lastResult: "string",
+    /**
+     * Per-seat facts about the hand that just ended, for Poker Moments.
+     *
+     * Populated with `reveals` and cleared with them. Display only in the
+     * sense that no decision hangs off it - but it is still server-derived,
+     * because every question it answers ("was that a bluff", "did the river
+     * do it") is a question about poker.
+     */
+    handNotes: { array: HandNote },
+    /**
+     * The seat whose bluff got called, or -1.
+     *
+     * Only ever set for a hand that reached a showdown, so it names a player
+     * whose cards the whole table has already seen. On a hand won by everyone
+     * folding this stays -1 even when the winner was stone cold bluffing:
+     * saying so would publish the strength of two cards nobody paid to see.
+     */
+    bluffCaughtSeat: "int8",
   },
   "PokerState",
 );
 
 export type PlayerInstance = InstanceType<typeof Player>;
+export type HandNoteInstance = InstanceType<typeof HandNote>;
 export type RevealInstance = InstanceType<typeof Reveal>;
 export type PotEntryInstance = InstanceType<typeof PotEntry>;
 export type PokerStateInstance = InstanceType<typeof PokerState>;

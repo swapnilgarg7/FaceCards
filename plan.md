@@ -406,6 +406,155 @@ there are six people. See `README.md` and `docs/BROWSERS.md`.
 
 ---
 
+### Phase 7a: Poker Moments — DONE
+
+**Why it exists:** the product's stated outcome is *"it feels like we're
+actually sitting at the table together"*, and the moment that feeling is
+strongest is the two seconds after a big hand is revealed, when five people
+react at once. Until now the client played the showdown out beautifully and
+then threw that away. A Poker Moment catches the reaction as a still and hands
+it back to the table with a joke on it.
+
+**Work**
+- `server/src/poker/story.ts`: a decided hand, read as facts — who was the
+  aggressor, who called big, who was in front at the turn and lost on the
+  river, whose bluff got called, who is out of chips. Pure, and unit-tested
+  against a stacked deck.
+- `server/src/poker/engine.ts`: a `history` of actions, append-only, read by
+  nothing that decides anything.
+- `shared/src/state.ts`: `HandNote[]` and `bluffCaughtSeat` on `PokerState`,
+  published at a payout and cleared with the reveals.
+- `client/src/moments/`: `moment.ts` decides whether a hand is worth a
+  photograph and who is in it; `captions.ts` owns two hundred lines of copy and
+  the rules that stop them repeating; `capture.ts` takes one frame per person;
+  `reel.ts` keeps the evening and picks the recap. Four pure modules, four test
+  files. `useMoments.ts`, `PokerMoment.tsx` and `NightInReview.tsx` are the
+  wiring and hold no decisions.
+- `verify:phase6` gained four checks and lost a bad one; see below.
+
+**Exit criteria**
+- A big hand ends and the table sees each other's faces with a caption. Met.
+- An ordinary hand ends and nothing happens at all. Met, and tested from the
+  "returns null" side, which is the side that matters.
+- A player with no camera is in the picture as their avatar, with the joke
+  intact. Met.
+- No frame is recorded, uploaded or written to disk. Met, and now enforced by
+  an allowlist rather than by a grep over five named files.
+
+**What the build corrected**
+
+- **"Which hand was that?" is a poker question, and it nearly got answered in
+  the client.** The obvious build reads `snapshot.reveals`, looks at the
+  descriptions, and decides for itself that somebody was bluffing. That is a
+  second poker implementation with a comedy budget, living in the one place
+  this project has spent six phases keeping poker out of. Worse, it is a
+  *weaker* implementation: the client cannot know who made the last raise on
+  the turn, and it cannot re-evaluate the hands against a four-card board to
+  find out who was in front before the river, because it never saw the board
+  in that state. Both questions are trivial next to the engine. So the story is
+  server-derived, and `client/src/moments/` contains no card logic at all.
+- **The funniest caption is the one that leaks.** "He was bluffing" is a
+  statement about two cards, and on a hand won by everyone folding those two
+  cards are private forever — the winner never has to show. The first design
+  had `bluffCaughtSeat` set from the aggressor's hand strength whether or not
+  there was a showdown, which would have published the strength of a folded-out
+  winner's hand to five people, in a feature nobody would think to audit. It is
+  now gated on the showdown in `story.ts`, gated again on the reveal list in
+  `mirror.ts`, and has a test in each file whose whole job is a hand where
+  seven-deuce shoves and wins.
+- **The check that was supposed to catch that had gone blind three ways.**
+  `verify:phase6` asserted "nothing records or stores camera, microphone or
+  voice data" by grepping five hard-coded paths for four patterns. Adding a
+  whole directory that draws webcam pixels to a canvas did not fail it. Fixing
+  it exposed two more layers of the same problem: `git grep` searches *tracked*
+  files, so the new directory was invisible even once it was in scope, and a
+  malformed pattern made `git grep` exit non-zero, which the `catch` was
+  quietly reading as "clean". A check that cannot fail is worse than no check,
+  because it is also a claim. It is now an allowlist diff over all of
+  `client/src`, with `--untracked`, comments stripped before judging, and a
+  non-1 exit status rethrown — and it was verified by planting a violation and
+  watching it fail.
+- **The toggle cannot mean what a user would assume, so it does not say it
+  does.** Every client captures from the video it is already receiving, so
+  turning Poker Moments off turns them off *on that screen*. It cannot reach
+  into anyone else's browser, and a settings panel that implied otherwise
+  would be the worst kind of privacy copy: reassuring and false. The honest
+  framing is the narrow one — a moment is a still of a picture the table is
+  already watching live, the camera button is the control that stops people
+  seeing your face, and nothing is ever recorded or uploaded.
+- **Rarity is the feature, and it is the thing a threshold quietly destroys.**
+  A moment after every hand is a loading screen between deals, and the failure
+  is gradual: it still works, people just stop looking. `moment.ts` therefore
+  says no far more often than yes, and the tests that assert *null* outnumber
+  the ones that assert a plan. The same instinct drove the caption cooldown: a
+  library of two hundred lines feels like six if the shuffler is allowed to
+  favour six.
+- **The specific joke has to be reachable, not mandatory.** Always picking the
+  most specific caption turns the system into a lookup table — every caught
+  bluff for the rest of your life comes with a bluff line. A weighted fall-off
+  across the applicable drawers keeps the specific one usual and the general
+  one possible, which is the difference between generated copy and something
+  that reads like a person watching.
+- **Elimination is volume, not meaning.** The first ordering put "AND HE'S
+  OUT." in front of "THE RIVER CHOSE VIOLENCE.", because being knocked out is
+  the biggest thing that happened. It is also the least interesting thing to
+  *say*: the drawers in front of it explain **why** the hand was lost, and why
+  is the better joke. The escalation is carried by the drama tier, which is
+  already making the whole card louder.
+- **The cheapest moment in a hand to spend 10ms is the payout.** The capture is
+  six `drawImage` calls and six encodes, once, at the instant nothing in the
+  scene is animating and no clock is running. What would have made it expensive
+  was doing it the obvious way: `toDataURL` encodes synchronously on the main
+  thread, and six of those back to back is a visible stutter in a WebGL scene
+  that is still drawing. `toBlob` hands it to the browser. The same reasoning
+  banned `backdrop-filter` from the overlay entirely.
+
+- **A shared joke that six people see differently is not a shared joke.** The
+  first build derived the *hand* from server state, correctly, and then rolled
+  the treatment and every caption with `Math.random` in each browser. Everyone
+  agreed on who won and disagreed on everything written about it. It took one
+  real game to surface — "I won, but I'd have preferred seeing what my friend
+  was shown" — and it is the kind of bug that no test would have caught,
+  because every client was individually correct. The fix needed no protocol at
+  all: the room code and the hand number are already on every machine, so the
+  choices are derived from them rather than drawn, and each client computes the
+  same card without being told. The photographs stay different, because making
+  those identical would mean uploading six people's faces.
+- **Determinism has an ordering requirement nothing enforces.** Seeding the
+  generator is the easy half. The captions only agree because every draw
+  happens synchronously, in a fixed order, *before* any capture begins — and
+  the first version drew each one inside the async function that photographed
+  that person, which run concurrently and settle in whatever order the network
+  allows. Same seed, same memory, different words. The draws were hoisted; the
+  hazard is that moving them back would break the table silently and pass every
+  test in the repo.
+- **The timer was politeness that cost the feature its point.** The moment
+  dismissed itself after four to six seconds, scaled by drama, on the reasoning
+  that a celebration must not get in the way. But the thing being interrupted
+  was six people shouting at each other's faces, which is the outcome the whole
+  product exists for, and a conversation does not fit in a fixed number of
+  seconds. It now stays until the table asks for the next hand — the same rule
+  `ShowdownOverlay` already followed, and one the server was already built for,
+  since it holds the deal until every seat presses Next round. The card
+  therefore had to *own* Next round rather than cover it: a celebration you
+  must dismiss to keep playing is one people learn to click past without
+  reading.
+
+**Traps**
+- Every `Shot` is a live object URL. The reel is capped and evicts by drama
+  rather than by age, and *the eviction is returned rather than performed* so
+  the caller can revoke it. A new path that keeps a `Shot` without revoking it
+  is a webcam frame that lives for the rest of the session.
+- Anything added to `client/src/moments/` that reads a card is the bug this
+  phase was built to avoid. The facts come from `handNotes`.
+- `verify:phase6` allowlists exactly one file for canvas pixel access. A second
+  one is a deliberate edit to a rule, not a convenience.
+- Every draw from the seeded generator must stay synchronous and in a fixed
+  order. Moving a `pickCaption` inside `shootPerson` desynchronises every
+  client at the table and breaks no test.
+
+---
+
 ### Phase 7: Private beta
 **Spec definition of done:** test with real friend groups and iterate on the social experience.
 

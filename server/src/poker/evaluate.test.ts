@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { HandStrength } from "@facecards/shared";
 import { cardsFromString, makeDeck } from "./cards.js";
 import {
   HandCategory,
@@ -149,5 +150,14 @@ describe("exhaustive sanity", () => {
       }
     }
     expect(count).toBeGreaterThan(1000);
+  });
+});
+
+describe("wire numbering", () => {
+  it("matches the shared HandStrength the client reads", () => {
+    // `HandNote.category` puts these numbers on the wire, and the client picks
+    // a caption off them. The two lists are declared separately so that
+    // `server/src/poker/` stays importless; this is what stops them drifting.
+    expect(HandCategory).toEqual({ ...HandStrength });
   });
 });

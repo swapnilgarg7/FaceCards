@@ -152,7 +152,88 @@ behind it.
 
 ---
 
+## 7. LOW — a captured face can come from a low simulcast layer
+
+`client/src/moments/useMoments.ts` `capture`, `client/src/scene/AttentionDirector.tsx`
+
+`adaptiveStream` and the attention director between them keep a peer whose
+avatar is off to the side of the camera on a low simulcast rung. A Poker Moment
+captures whatever layer is live at the instant the result is revealed, so the
+player who was not being looked at is photographed at h180 and blown up to a
+128-pixel portrait. It reads as a soft, blocky face next to a sharp one.
+
+Not fixed, and the reason is that the obvious fix is worse than the symptom.
+Asking for `high` on the whole cast at the moment of capture is useless — a
+layer switch takes hundreds of milliseconds and the frame is drawn immediately.
+Asking for it at the *start* of the payout would work, but it means a second
+thing writing `setQuality` on a loop that already has one, and a fight between
+two controllers of an adaptive system is exactly the oscillation
+`docs/ENGINEERING-STYLE.md` warns about — the failure mode there is worse than a
+soft photograph, because it is intermittent and affects live faces mid-hand.
+
+**Fix:** give the attention director an explicit "showdown" mode it owns
+itself, entered on `TablePhase.Payout` and left at the next deal, which pins
+every subscribed peer to `high` for the duration. One controller, one rule, and
+the moment gets sharp faces as a side effect of the thing the table already
+wants — everyone looking at everyone during a showdown.
+
+## 8. FIXED — Poker Moments showed a different card to every player
+
+`client/src/moments/useMoments.ts`, `client/src/moments/seed.ts`
+
+Each client plans its own moment from server state, so everybody agreed on the
+hand and the winner. Everything else was rolled locally with `Math.random`: the
+winner saw a newspaper, the player next to them saw a wanted poster, and the
+captions under the same face were different words. Reported from an actual
+game, and the report is the clearest statement of why it mattered — *"I won,
+but I'd have preferred seeing what my friend was shown."* A Poker Moment is a
+shared artifact or it is nothing; six people looking at six different cards
+cannot laugh at the same joke.
+
+**Fixed.** `seed.ts` derives a seed from the room code and the hand number —
+state every client already holds — and one `mulberry32` generator per hand
+feeds the treatment pick and every caption, drawn in a fixed order (hero,
+fallen, witnesses). No message was added, nothing is trusted from another
+client, and there is no round trip: each browser computes the same answer
+independently. The caption cooldown stays local and converges, because every
+client plans the same moments and therefore records the same history; a player
+who joins mid-session diverges for at most `COOLDOWN_HANDS` hands before their
+memory ages back into agreement.
+
+What is still per-viewer, and always will be: **the photographs**. Each client
+captures the video stream it is already receiving — your own camera at full
+resolution on your machine, whatever the SFU delivered on everyone else's. The
+only way to make those identical is to upload people's webcam frames to a
+server, which is the one thing this feature promises it never does.
+
+Worth carrying forward: the captions are only in sync because every draw from
+the seeded generator happens **synchronously, in a fixed order**, before any
+capture starts. The first version picked each caption inside the async function
+that photographed that person, and those run concurrently — so the draw order
+was whatever the promises settled in. A future edit that moves a `pickCaption`
+back inside `shootPerson` would silently desynchronise the table again, and
+nothing would fail.
+
 ## Not defects, recorded so they are not re-litigated
+
+**A Poker Moment publishes no card that was not already public.** The feature
+needs to know whether a hand was a bluff, a cooler or a suckout, and all three
+are statements about hole cards. They are derived in `server/src/poker/story.ts`
+and published as `HandNote`, and the rule is enforced in two independent places:
+`story.ts` refuses to classify a seat that is not in `result.showdown`, and
+`state/mirror.ts` re-checks the reveal list before writing a single note, so a
+future edit to one of them cannot open the hole on its own. A hand won on folds
+carries `showed: false`, `category: -1` and `bluffCaughtSeat: -1`, however
+obvious the bluff was — the winner never has to show, and a caption is not a
+good enough reason to make them. `server/src/state/mirror.test.ts` tests exactly
+that hand: seven-deuce shoves, everybody folds, and nothing published
+distinguishes it from a shove with aces.
+
+**What `HandNote` *does* say about a folded hand is public by construction.**
+Who made the last raise, how much somebody called, what a seat committed and
+whether they have chips left were all watched by the whole table as they
+happened, and every one of them is already derivable from the public schema.
+The note is a convenience, not a new disclosure.
 
 **Seat hijack through the reconnection window is not possible.** `claimSeat`
 skips both `takenSeats` and any seat the running hand still holds, and neither

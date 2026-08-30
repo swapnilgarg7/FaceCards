@@ -223,6 +223,11 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
     this.state.smallBlindSeat = NO_SEAT;
     this.state.bigBlindSeat = NO_SEAT;
     this.state.lastResult = "";
+    // Explicit, like every other seat field above it. `int8` initialises to 0
+    // if nothing assigns it, and 0 is a real seat: a client reading this
+    // before the first payout would be told seat 1 had been caught bluffing a
+    // hand that has not been dealt.
+    this.state.bluffCaughtSeat = NO_SEAT;
 
     // Matchmaking joins by code, so the code must be queryable metadata.
     void this.setMetadata({ code });

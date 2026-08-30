@@ -45,12 +45,34 @@ export interface ShowdownOverlayProps {
   me: SeatSnapshot | undefined;
   /** "I have seen it." The server deals when the last seat says so. */
   onNextHand(): void;
+  /**
+   * The last beat has played: the winner is named and every card that was
+   * going to turn over has.
+   *
+   * This is the instant a Poker Moment photographs the table, and it is here
+   * rather than on a timer of its own because it is the only moment that is
+   * *about* anything - it is when six people find out what happened, which is
+   * when six people react. Fired once per hand, including when the ceremony
+   * was skipped, and never during one.
+   */
+  onRevealed?(): void;
+  /**
+   * A Poker Moment is on top of this screen right now.
+   *
+   * The only thing it changes is the keyboard. The moment owns Next round
+   * while it is up - it renders its own button for it - and two live handlers
+   * for one key would send the intent *and* leave the card sitting there,
+   * which reads as the button not working.
+   */
+  suspended?: boolean;
 }
 
 export function ShowdownOverlay({
   snapshot,
   me,
   onNextHand,
+  onRevealed,
+  suspended = false,
 }: ShowdownOverlayProps) {
   const { touch } = useView();
   const decided = snapshot.phase === TablePhase.Payout;
@@ -97,6 +119,17 @@ export function ShowdownOverlay({
     setPlayed(plan.beats.length);
   }, [plan.beats.length]);
 
+  // Announced from an effect, not from render: the callback captures a webcam
+  // frame and pushes state of its own, and doing that during a render of this
+  // component would be a write to another component while this one is
+  // rendering. `useMoments.capture` is idempotent per hand, so a re-entry from
+  // a late patch is harmless anyway - this is belt and braces on the ordering.
+  useEffect(() => {
+    if (!decided) return;
+    if (!resultUp(plan, played)) return;
+    onRevealed?.();
+  }, [decided, plan, played, onRevealed]);
+
   const asked = me?.readyNext ?? false;
   const waiting = waitingOn(snapshot);
   const done = resultUp(plan, played);
@@ -112,7 +145,7 @@ export function ShowdownOverlay({
         else if (!asked) onNextHand();
       },
     },
-    decided,
+    decided && !suspended,
   );
 
   if (!decided) return null;

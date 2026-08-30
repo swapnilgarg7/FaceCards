@@ -81,6 +81,29 @@ export interface RevealSnapshot {
   won: number;
 }
 
+/**
+ * What the server said happened to one seat in the hand that just ended.
+ *
+ * Read only by `moments/`, which turns it into a caption and a treatment.
+ * Every field is the server's classification, not this client's: whether a
+ * hand was a bluff or a suckout is a poker question, and there is no poker in
+ * `client/`. See `server/src/poker/story.ts`.
+ */
+export interface HandNoteSnapshot {
+  seat: number;
+  won: number;
+  committed: number;
+  allIn: boolean;
+  busted: boolean;
+  aggressor: boolean;
+  biggestCall: number;
+  /** This seat reached a showdown, so its cards are in `reveals`. */
+  showed: boolean;
+  /** `HandCategory`, or -1 for a seat that never showed. */
+  category: number;
+  rivered: boolean;
+}
+
 export interface PotSnapshot {
   amount: number;
   eligible: string[];
@@ -118,6 +141,10 @@ export interface RoomSnapshot {
   handNumber: number;
   reveals: RevealSnapshot[];
   lastResult: string;
+  /** Per-seat facts about the decided hand. Empty except during a payout. */
+  handNotes: HandNoteSnapshot[];
+  /** Seat whose bluff got called, or -1. Only ever set at a showdown. */
+  bluffCaughtSeat: number;
   players: SeatSnapshot[];
 }
 
@@ -220,6 +247,22 @@ function snapshotOf(room: PokerRoom): RoomSnapshot | null {
     });
   });
 
+  const handNotes: HandNoteSnapshot[] = [];
+  state.handNotes?.forEach((note) => {
+    handNotes.push({
+      seat: note.seat,
+      won: note.won,
+      committed: note.committed,
+      allIn: note.allIn,
+      busted: note.busted,
+      aggressor: note.aggressor,
+      biggestCall: note.biggestCall,
+      showed: note.showed,
+      category: note.category,
+      rivered: note.rivered,
+    });
+  });
+
   const pots: PotSnapshot[] = [];
   state.pots?.forEach((pot) => {
     pots.push({ amount: pot.amount, eligible: [...pot.eligible] });
@@ -248,6 +291,8 @@ function snapshotOf(room: PokerRoom): RoomSnapshot | null {
     handNumber: state.handNumber,
     reveals,
     lastResult: state.lastResult,
+    handNotes,
+    bluffCaughtSeat: state.bluffCaughtSeat ?? -1,
     players,
   };
 }

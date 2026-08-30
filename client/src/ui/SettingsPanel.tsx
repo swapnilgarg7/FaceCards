@@ -72,6 +72,12 @@ export interface SettingsPanelProps {
   quality: UseQuality;
   /** Dealt out of the next hand. Server-owned; this is what it says. */
   sittingOut: boolean;
+  /** Whether this player wants their face photographed at big showdowns. */
+  momentsEnabled: boolean;
+  /** How many moments this session has captured, so the recap can say. */
+  momentCount: number;
+  onMomentsChange(enabled: boolean): void;
+  onOpenReview(): void;
   onSitOutChange(sittingOut: boolean): void;
   onSensitivityChange(value: number): void;
   onClose(): void;
@@ -86,6 +92,10 @@ export function SettingsPanel({
   sensitivity,
   quality,
   sittingOut,
+  momentsEnabled,
+  momentCount,
+  onMomentsChange,
+  onOpenReview,
   onSitOutChange,
   onSensitivityChange,
   onClose,
@@ -282,6 +292,36 @@ export function SettingsPanel({
             </button>
           </div>
           <p className="note">Anyone with this link can take a seat.</p>
+        </section>
+
+        <section className="settings__section">
+          <h3>Poker Moments</h3>
+          <div className="settings__row">
+            <button className="btn" onClick={() => onMomentsChange(!momentsEnabled)}>
+              {momentsEnabled ? "Turn moments off" : "Turn moments on"}
+            </button>
+            <button
+              className="btn"
+              onClick={onOpenReview}
+              disabled={momentCount === 0}
+            >
+              Tonight at the table
+              {momentCount > 0 ? ` (${momentCount})` : ""}
+            </button>
+          </div>
+          {/* Two sentences, and the second one is the important one.
+              Every client captures from the video it is already receiving, so
+              this switch turns moments off *on this screen* - it cannot reach
+              into anybody else's browser and does not pretend to. The honest
+              claim is the narrow one: a moment is a still of the picture the
+              table is already watching live, it is never recorded or
+              uploaded, and the control that stops other people seeing your
+              face is the camera button, which is two lines up this panel. */}
+          <p className="note">
+            {momentsEnabled
+              ? "At big showdowns, a single still of each face is shown with a caption. Nothing is recorded, uploaded or saved - the frames live in this tab and go when you close it."
+              : "Off for your screen. Everyone else still sees their own moments, because each table captures the video it is already receiving; turn your camera off if you would rather not be in them."}
+          </p>
         </section>
 
         <section className="settings__section">

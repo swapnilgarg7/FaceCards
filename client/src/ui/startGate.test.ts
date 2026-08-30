@@ -49,6 +49,8 @@ function table(players: SeatSnapshot[], handNumber = 0): RoomSnapshot {
     bigBlind: 10,
     handNumber,
     reveals: [],
+    handNotes: [],
+    bluffCaughtSeat: -1,
     lastResult: "",
     players,
   };

@@ -1,8 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
-import { MAX_PLAYERS, type PokerActionType } from "@facecards/shared";
+import {
+  MAX_PLAYERS,
+  TablePhase,
+  type PokerActionType,
+} from "@facecards/shared";
 import { useTableAudio } from "../audio/useTableAudio.js";
 import { useFaceTracking } from "../avatars/useFaceTracking.js";
 import type { UseMedia } from "../media/useMedia.js";
+import { NightInReview } from "../moments/NightInReview.js";
+import { PokerMoment } from "../moments/PokerMoment.js";
+import { useMoments } from "../moments/useMoments.js";
 import type { RoomSnapshot } from "../net/useRoom.js";
 import { Room3D } from "../scene/Room3D.js";
 import { useQuality } from "../scene/useQuality.js";
@@ -20,6 +27,7 @@ import {
 import { PeekHint } from "./PeekHint.js";
 import { SettingsPanel, loadSensitivity } from "./SettingsPanel.js";
 import { ShowdownOverlay } from "./ShowdownOverlay.js";
+import { waitingOn } from "./showdown.js";
 import { PlayGate } from "./PlayGate.js";
 import { startGate } from "./startGate.js";
 import { VideoTile } from "./VideoTile.js";
@@ -115,6 +123,38 @@ export function Table({
   useEffect(() => {
     if (view.compact) setStandingsOpen(false);
   }, [view.compact]);
+
+  // Whether the night's recap is up. Not a moment: it is a thing somebody
+  // opens on purpose, from the menu, usually while the table is arguing about
+  // the hand before.
+  const [reviewOpen, setReviewOpen] = useState(false);
+
+  // Poker Moments. Nothing about the table reads this, and that is deliberate:
+  // if the whole hook threw on every call the hand would play out unchanged.
+  const moments = useMoments(media, sessionId);
+  // Depends on `moments.capture` rather than on `moments`, which is a fresh
+  // object every render: the showdown overlay lists this callback as an effect
+  // dependency, so a new identity per render would re-run that effect on every
+  // patch of a payout. `capture` is idempotent per hand either way; this keeps
+  // it from being called forty times to find that out.
+  const onRevealed = useCallback(
+    () => moments.capture(snapshot),
+    [moments.capture, snapshot],
+  );
+
+  // The card comes down when the table moves on, and only then. It holds the
+  // screen for as long as the conversation about the hand lasts, which is the
+  // same rule the payout underneath it follows and the reason the server waits
+  // for every seat before dealing.
+  //
+  // This is also the card's backstop. `PAYOUT_MAX_MS` deals the next hand for
+  // a table that walked away from its laptops, and when it does the phase
+  // leaves the payout and this clears - so there is no sequence of events that
+  // leaves a photograph over a live hand.
+  const decided = snapshot.phase === TablePhase.Payout;
+  useEffect(() => {
+    if (!decided) moments.dismiss();
+  }, [decided, moments.dismiss]);
 
   // The table's own sound, derived from the difference between one snapshot
   // and the next. See `audio/cues.ts`: there is no event stream, only state
@@ -463,7 +503,30 @@ export function Table({
           turns over a card at a time, then every hand that had to show, then
           the winner - and it stays up until the table asks for the next one.
           See `ShowdownOverlay.tsx`. */}
-      <ShowdownOverlay snapshot={snapshot} me={me} onNextHand={onNextHand} />
+      <ShowdownOverlay
+        snapshot={snapshot}
+        me={me}
+        onNextHand={onNextHand}
+        onRevealed={onRevealed}
+        suspended={!!moments.current}
+      />
+
+      {/* The photograph, over the showdown that produced it. It dismisses
+          itself; see `PokerMoment.tsx` for why it is never allowed to be the
+          thing standing between a table and the next hand. */}
+      {moments.current && (
+        <PokerMoment
+          moment={moments.current}
+          onNextHand={onNextHand}
+          asked={me?.readyNext ?? false}
+          waiting={waitingOn(snapshot)}
+          onDismiss={moments.dismiss}
+        />
+      )}
+
+      {reviewOpen && (
+        <NightInReview reel={moments.reel} onClose={() => setReviewOpen(false)} />
+      )}
 
       {settingsOpen && (
         <SettingsPanel
@@ -474,6 +537,13 @@ export function Table({
           sensitivity={sensitivity}
           quality={quality}
           sittingOut={me?.sittingOut ?? false}
+          momentsEnabled={moments.enabled}
+          momentCount={moments.reel.length}
+          onMomentsChange={moments.setEnabled}
+          onOpenReview={() => {
+            setSettingsOpen(false);
+            setReviewOpen(true);
+          }}
           onSitOutChange={onSitOutChange}
           onSensitivityChange={setSensitivity}
           onClose={() => setSettingsOpen(false)}

@@ -1,4 +1,5 @@
 import {
+  HandNote,
   PotEntry,
   Reveal,
   SeatStatus,
@@ -8,6 +9,7 @@ import {
 } from "@facecards/shared";
 import {
   cardToString,
+  handStory,
   legalActions,
   totalPot,
   type HandState,
@@ -88,6 +90,11 @@ export function clearResult(state: PokerStateInstance) {
   state.reveals.clear();
   state.pots.clear();
   state.lastResult = "";
+  // Cleared with the reveals, and for the same reason: a note is a statement
+  // about cards that were public for one hand, and carrying it into the next
+  // one would describe a hand nobody is looking at any more.
+  state.handNotes.clear();
+  state.bluffCaughtSeat = NO_SEAT;
 }
 
 /**
@@ -218,6 +225,35 @@ export function mirrorResult(
     reveal.won = wonBySeat.get(entry.seat) ?? 0;
     state.reveals.push(reveal);
   }
+
+  // The story, after the reveals and never before them: every field it
+  // publishes about hand strength describes a seat that is in the list above,
+  // and writing it in this order is what makes that easy to check.
+  const story = handStory(hand);
+  state.handNotes.clear();
+  const revealed = new Set(result.showdown.map((entry) => entry.seat));
+  for (const seat of story.seats) {
+    const note = new HandNote();
+    note.seat = seat.seat;
+    note.won = seat.won;
+    note.committed = seat.committed;
+    note.allIn = seat.allIn;
+    note.busted = seat.busted;
+    note.aggressor = seat.aggressor;
+    note.biggestCall = seat.biggestCall;
+    // Belt and braces over `story.ts`, which already refuses to classify a
+    // hand nobody showed. This is the last line before the wire, so it is the
+    // right place to state the invariant rather than trust it: a seat that is
+    // not in `reveals` carries no hand strength, full stop.
+    const showed = revealed.has(seat.seat);
+    note.showed = showed;
+    note.category = showed ? seat.category : NO_SEAT;
+    note.rivered = showed && seat.rivered;
+    state.handNotes.push(note);
+  }
+  state.bluffCaughtSeat = revealed.has(story.bluffCaughtSeat)
+    ? story.bluffCaughtSeat
+    : NO_SEAT;
 
   const named = new Map(names);
   for (const seat of hand.seats.values()) {

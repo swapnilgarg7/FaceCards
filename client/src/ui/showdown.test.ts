@@ -72,6 +72,8 @@ function table(over: Partial<RoomSnapshot> = {}): RoomSnapshot {
     bigBlind: 10,
     handNumber: 3,
     reveals: [],
+    handNotes: [],
+    bluffCaughtSeat: -1,
     lastResult: "",
     players: [],
     ...over,
