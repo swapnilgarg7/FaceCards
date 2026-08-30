@@ -158,7 +158,41 @@ server/   Node + TypeScript, authoritative
 shared/   protocol: message types, state schema, constants. Imported by both ends
 docker/   local LiveKit SFU
 scripts/  verification harnesses
+docs/     decisions, asset licences, the browser matrix, and how this is written
+  ENGINEERING-STYLE.md  the testing and failure-handling method, and why
+  portable/             the same method packaged to drop into a new repo
 ```
+
+## How this codebase is written
+
+`docs/ENGINEERING-STYLE.md` is the full account. The short version, because it
+explains the shape of nearly every directory above:
+
+**Everything that decides something is a pure module with a unit test.
+Everything that touches the world is a thin shell with no test, covered instead
+by a simulation that replays the real modules.** That is why `src/scene/` splits
+maths into `.ts` and the renderer into `.tsx`, why `poker/` may not import I/O,
+and why there are 715 unit tests and not one of them renders a component.
+
+The simulations are the `verify:phase*` scripts. They exist for the claims a
+unit test structurally cannot make: whole-system properties ("no card ever
+reaches the wrong client"), structural facts about the source ("this guard is in
+the one place it has to be"), and facts on disk ("every shipped asset is
+credited, in both directions").
+
+Three rules follow from that and appear everywhere:
+
+- **Derive invariants, never store them.** Two fields that must agree will one
+  day disagree; one field and a function cannot. `MediaFault.retryable` is
+  computed from the recovery verb, which is what makes "a Retry button on an
+  unretryable failure" unrepresentable rather than merely untested.
+- **Never offer an action that cannot succeed.** Failures classify to a verb;
+  the UI renders the verb and decides nothing.
+- **Comments explain why, never what.** Every non-obvious constant carries the
+  argument that chose it.
+
+To use this method in another project, read `docs/portable/README.md`. The file
+to add is `CLAUDE.md` at the new repo's root.
 
 ## The rules that outlive phase 0
 

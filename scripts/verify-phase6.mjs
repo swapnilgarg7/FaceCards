@@ -80,7 +80,7 @@ const read = (...parts) => readFileSync(join(root, ...parts), "utf8");
 const results = [];
 const check = (name, pass, detail = "") => {
   results.push({ name, pass });
-  console.log(`${pass ? "  ok  " : " FAIL "} ${name}${detail ? ` — ${detail}` : ""}`);
+  console.log(`${pass ? "  ok  " : " FAIL "} ${name}${detail ? ` - ${detail}` : ""}`);
 };
 const section = (title) => console.log(`\n${title}\n${"-".repeat(title.length)}`);
 
