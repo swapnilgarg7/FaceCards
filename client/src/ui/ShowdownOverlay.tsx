@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TablePhase } from "@facecards/shared";
+import { formatChips } from "./chipAmount.js";
 import type { RoomSnapshot, SeatSnapshot } from "../net/useRoom.js";
 import { Kbd } from "./Kbd.js";
 import { useView } from "./useViewport.js";
@@ -14,6 +15,7 @@ import {
   showdownPlan,
   waitingOn,
 } from "./showdown.js";
+import { rebuyOffer } from "./rebuy.js";
 
 /**
  * The end of a hand, played out big in the middle of the screen.
@@ -46,6 +48,13 @@ export interface ShowdownOverlayProps {
   /** "I have seen it." The server deals when the last seat says so. */
   onNextHand(): void;
   /**
+   * Buy back in, from the screen where busting happens.
+   *
+   * Same intent the leaderboard sends and the same server decision behind it;
+   * this is only a second, better-placed door to it. See `rebuy.ts`.
+   */
+  onBuyIn(amount: number): void;
+  /**
    * The last beat has played: the winner is named and every card that was
    * going to turn over has.
    *
@@ -71,6 +80,7 @@ export function ShowdownOverlay({
   snapshot,
   me,
   onNextHand,
+  onBuyIn,
   onRevealed,
   suspended = false,
 }: ShowdownOverlayProps) {
@@ -133,6 +143,10 @@ export function ShowdownOverlay({
   const asked = me?.readyNext ?? false;
   const waiting = waitingOn(snapshot);
   const done = resultUp(plan, played);
+  // Only once the ceremony has finished. Offering somebody chips while their
+  // losing hand is still turning over is the app telling them how it ends.
+  const rebuy = rebuyOffer(me);
+  const offerRebuy = done && rebuy.show;
 
   // Enter is the whole keyboard here, and it means the two things this screen
   // can mean, in the order a player wants them: get on with it, then deal the
@@ -231,6 +245,36 @@ export function ShowdownOverlay({
             </p>
           )}
         </div>
+
+        {/* Busting is where a poker night quietly loses a player: the table
+            deals on without a seat that has no chips, and the way back used to
+            be a panel they had to go and find. One press, here, next to the
+            button that moves the game on. See `rebuy.ts`. */}
+        {offerRebuy && (
+          <div
+            className="showdown__rebuy"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <p className="showdown__rebuy-lede">
+              {rebuy.pending > 0
+                ? `${formatChips(rebuy.pending)} arriving. You are in the next hand.`
+                : "You are out of chips. Your seat is still yours."}
+            </p>
+            {rebuy.presets.length > 0 && (
+              <div className="showdown__rebuy-row">
+                {rebuy.presets.map((amount) => (
+                  <button
+                    key={amount}
+                    className="btn btn--primary showdown__rebuy-amount"
+                    onClick={() => onBuyIn(amount)}
+                  >
+                    Buy in {formatChips(amount)}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="showdown__foot">
           <button

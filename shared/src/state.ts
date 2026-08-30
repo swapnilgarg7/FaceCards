@@ -126,7 +126,6 @@ export const Player = schema(
      * reaches them. It is what stops a seat from stepping in just past the
      * blinds, folding round, and stepping out again before paying any.
      */
-    owesBlind: "boolean",
     /** Chips in front of this seat for the current betting round. */
     bet: "uint32",
     /** One of `SeatStatus`. */

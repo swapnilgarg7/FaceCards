@@ -507,6 +507,7 @@ export function Table({
         snapshot={snapshot}
         me={me}
         onNextHand={onNextHand}
+        onBuyIn={onBuyIn}
         onRevealed={onRevealed}
         suspended={!!moments.current}
       />

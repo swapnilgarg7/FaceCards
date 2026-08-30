@@ -73,7 +73,6 @@ const NOTE_LABELS: Record<SeatNote, string> = {
   busted: "out of chips",
   "not-ready": "not ready yet",
   "sitting-out": "sitting out",
-  "waiting-for-blind": "waiting for the blind",
   playing: "",
 };
 

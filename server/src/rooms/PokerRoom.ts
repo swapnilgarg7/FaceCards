@@ -4,6 +4,7 @@ import {
   BIG_BLIND,
   ClientMessage,
   DISCONNECTED_TURN_TIMEOUT_MS,
+  HAND_START_DELAY_MS,
   MAX_PLAYERS,
   MAX_STACK,
   MIN_PLAYERS,
@@ -33,14 +34,13 @@ import {
   forfeit,
   legalActions,
   nextBlinds,
-  seatsOwingBlind,
   startHand,
   type Action,
   type BlindPositions,
   type HandState,
 } from "../poker/index.js";
 import { secureRandomInt } from "../rng.js";
-import { dealDelayMs } from "./firstDeal.js";
+import { holdForTable } from "./firstDeal.js";
 import {
   NO_SEAT,
   clearHand,
@@ -93,12 +93,6 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
   override autoDispose = false;
   private disposeTimer: NodeJS.Timeout | undefined;
   private dealTimer: NodeJS.Timeout | undefined;
-  /**
-   * When the pending deal fires, as a wall clock. Only read to decide whether
-   * a fresh `considerDealing()` would bring the deal *forward*; a countdown
-   * that has already started is never pushed back by someone else clicking.
-   */
-  private dealAt = 0;
   private turnTimer: NodeJS.Timeout | undefined;
 
   /** Seat indices currently taken. Seats are fixed for a session. */
@@ -276,16 +270,20 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
       // It does end their vote on the payout screen, though: a seat that is
       // not in the next hand cannot be the one the next hand is waiting for.
       this.considerContinuing();
+      // A seat can settle the first deal by *leaving* the question, not only
+      // by answering it: the table waits for everyone who could press Play, so
+      // a friend who drops, leaves or sits out is one fewer person it is
+      // waiting on. Without this the table would sit there forever waiting on
+      // a chair nobody is in.
+      this.considerDealing();
     });
 
     this.onIntent(ClientMessage.SitIn, (client) => {
       const player = this.state.players.get(client.sessionId);
       if (!player || !player.sittingOut) return;
       player.sittingOut = false;
-      // Nothing about `owesBlind` here on purpose. Sitting back in does not
-      // itself cost a blind - *missing a deal* does, and `deal()` is what
-      // records that. Someone who sits out and changes their mind before the
-      // next hand has missed nothing and owes nothing.
+      // Sitting back in costs nothing and waits for nothing: the next deal
+      // reads the roster as it stands, and this seat is now on it.
       // Whatever put them in the corner is over; a fresh sit-in starts the
       // strike count again.
       this.timeoutStrikes.delete(client.sessionId);
@@ -357,10 +355,6 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
     player.pendingBuyIn = 0;
     player.handsPlayed = 0;
     player.handsWon = 0;
-    // Sitting down at a table already in play means waiting for the blind, the
-    // same as anywhere else. The first players to arrive owe nothing, or a
-    // table of two would never deal its first hand.
-    player.owesBlind = this.previousBlinds !== null;
     player.bet = 0;
     player.status = SeatStatus.Waiting;
     player.cardCount = 0;
@@ -418,6 +412,12 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
     this.armTurnClock();
     // An empty chair is also not somebody the payout screen is waiting on.
     this.considerContinuing();
+    // A seat can settle the first deal by *leaving* the question, not only
+    // by answering it: the table waits for everyone who could press Play, so
+    // a friend who drops, leaves or sits out is one fewer person it is
+    // waiting on. Without this the table would sit there forever waiting on
+    // a chair nobody is in.
+    this.considerDealing();
 
     try {
       await this.allowReconnection(client, RECONNECT_GRACE_MS / 1000);
@@ -502,6 +502,12 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
     }
     // They are not coming back to press Next round.
     this.considerContinuing();
+    // A seat can settle the first deal by *leaving* the question, not only
+    // by answering it: the table waits for everyone who could press Play, so
+    // a friend who drops, leaves or sits out is one fewer person it is
+    // waiting on. Without this the table would sit there forever waiting on
+    // a chair nobody is in.
+    this.considerDealing();
     this.scheduleDisposeIfEmpty();
   }
 
@@ -606,10 +612,10 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
 
     player.stack += decision.amount;
     player.totalBuyIn += decision.amount;
-    // Nothing about `owesBlind`: whether this seat has to wait was already
-    // settled by the deals it did or did not sit out while it was broke.
-    // Rebuying between two hands costs nothing; rebuying after watching four
-    // go by does, and the four hands are what recorded it.
+    // Nothing else to record. Chips behind the seat is the whole of being
+    // dealt in: `eligiblePlayers` reads the stack and the next deal takes
+    // them. A player who rebuys during a payout plays the very next hand,
+    // which is the only version of this a table of friends will accept.
 
     console.log(
       `[room ${this.state.code}] ${player.displayName} bought in for` +
@@ -956,37 +962,27 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
     if (this.hand) return;
     if (this.eligiblePlayers().length < MIN_PLAYERS) return;
 
-    const hasDealt = this.previousBlinds !== null;
+    // A pending deal is left strictly alone. The timer in front of a table
+    // that has just finished a hand is the payout screen, measured in the tens
+    // of seconds people spend talking about the hand they just played, and
+    // somebody sitting in or buying in during it must not cut that short.
+    if (this.dealTimer) return;
 
-    // Once the table has played a hand, a pending deal is left strictly alone,
-    // as it always was. The timer in front of a table that has just finished a
-    // hand is the payout screen, and it is measured in the tens of seconds
-    // people spend talking about the hand they just played. Someone sitting in
-    // or buying in during it must not cut that short.
-    if (hasDealt) {
-      if (this.dealTimer) return;
-      this.scheduleDeal(dealDelayMs([], true));
-      return;
-    }
-
-    const delay = dealDelayMs(
+    // The table's *first* hand waits for the room rather than for a count. See
+    // `firstDeal.ts`: everyone who could press Play has to have pressed it.
+    // Every Play press comes back through here, so the last one deals.
+    const holding = holdForTable(
       [...this.state.players.values()].map((player) => ({
         ready: player.ready,
         connected: player.connected,
         sittingOut: player.sittingOut,
         funded: player.stack + player.pendingBuyIn > 0,
       })),
-      false,
+      this.previousBlinds !== null,
     );
+    if (holding) return;
 
-    // Before the first hand it is the opposite: the grace is running *because*
-    // the table is not all here, every Play press comes back through this
-    // method, and the only useful thing a press can do to the countdown is cut
-    // it short. Restarting on each would push the deal further away from a
-    // table that is getting readier, so that the last friend to click would be
-    // the one who delayed it.
-    if (this.dealTimer && Date.now() + delay >= this.dealAt) return;
-    this.scheduleDeal(delay);
+    this.scheduleDeal(HAND_START_DELAY_MS);
   }
 
   /** Everyone who has pressed Play, whatever else is true of them. */
@@ -1060,10 +1056,8 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
 
   private scheduleDeal(delayMs: number): void {
     if (this.dealTimer) clearTimeout(this.dealTimer);
-    this.dealAt = Date.now() + delayMs;
     this.dealTimer = setTimeout(() => {
       this.dealTimer = undefined;
-      this.dealAt = 0;
       this.deal();
     }, delayMs);
   }
@@ -1087,11 +1081,7 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
       eligible.length < MIN_PLAYERS
         ? null
         : nextBlinds(
-            eligible.map((player) => ({
-              seat: player.seat,
-              ready: true,
-              owesBlind: player.owesBlind,
-            })),
+            eligible.map((player) => ({ seat: player.seat, ready: true })),
             this.previousBlinds,
           );
 
@@ -1161,47 +1151,10 @@ export class PokerRoom extends Room<{ state: PokerStateInstance }> {
     this.state.bigBlindSeat = arrangement.bigBlindSeat;
 
     this.handNames.clear();
-    const seated = new Set(arrangement.dealt);
     for (const player of dealt) {
-      // Whatever they were waiting for, they have been dealt in; the seat that
-      // posted the blind has paid it.
-      player.owesBlind = false;
       player.handsPlayed += 1;
       this.handNames.set(player.seat, player.displayName);
     }
-
-    // Everyone else at the table just watched a blind go past. Whether that
-    // costs them a wait is `seatsOwingBlind`: a blind that went past an empty
-    // chair does, a blind that went past a seat which was ready, connected and
-    // funded does not, because the only thing holding that seat out was a debt
-    // it was already paying. Charging it twice is what stretched "wait one
-    // hand" into "wait until the big blind has walked the entire ring", which
-    // at seven-handed meant six hands of watching. Recording it here means a
-    // seat that changes its mind between two deals waits for nothing, and a
-    // seat that sat five hands out cannot step back in one place past the
-    // blinds.
-    //
-    // **No exemption for a dropped player**, and that is a deliberate reversal.
-    // Sparing them read as generosity - their seat, stack and cards are all
-    // held for them, so why charge them a blind? - but a non-consented drop is
-    // one `ws.close()` away, `state.bigBlindSeat` says exactly when the blind
-    // is due, and the reconnection window is a minute long. That is the "step
-    // in past the blinds, fold round, step out again" behaviour this rule
-    // exists to stop, arriving through the reconnection door. Whether a blind
-    // went past your empty chair is not a question about your connection.
-    //
-    // What a dropped player keeps is everything that matters: the seat, the
-    // chips, the cards and a minute to come back. What they pay is the same
-    // thing anyone else pays for missing hands, which is a wait for the blind.
-    const owing = seatsOwingBlind(
-      [...this.state.players.values()].map((player) => player.seat),
-      eligible.map((player) => player.seat),
-      arrangement.dealt,
-    );
-    this.state.players.forEach((player) => {
-      if (seated.has(player.seat)) return;
-      player.owesBlind = owing.has(player.seat);
-    });
 
     mirrorHoleCards(this.hand, bySeat);
     console.log(

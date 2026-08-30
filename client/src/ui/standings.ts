@@ -46,7 +46,6 @@ export type SeatNote =
   | "busted"
   | "not-ready"
   | "sitting-out"
-  | "waiting-for-blind"
   | "playing";
 
 export interface LeaderboardRow {
@@ -96,7 +95,6 @@ function noteFor(player: SeatSnapshot): SeatNote {
   // "has not started yet" is a different sentence from "is taking a break".
   if (!player.ready) return "not-ready";
   if (player.sittingOut) return "sitting-out";
-  if (player.owesBlind) return "waiting-for-blind";
   return "playing";
 }
 

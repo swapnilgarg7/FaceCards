@@ -1,26 +1,25 @@
-import { FIRST_HAND_GRACE_MS, HAND_START_DELAY_MS } from "@facecards/shared";
-
 /**
- * How long to hold a deal that has just become possible.
+ * Whether the table's first hand is still waiting for the room.
  *
  * There is exactly one moment in an evening where "enough players" and "the
  * table" are different sets: the first hand. Every later deal follows a hand
- * everybody just watched, so the roster is already settled and the two-second
- * beat is only there so the felt is not cleared out from under the last click.
+ * everybody just watched, so the roster is already settled.
  *
  * The first deal is not like that. People arrive over a minute, find their
- * camera, say hello, and press Play in whatever order they get to it. Firing
- * two seconds after the *second* Play deals a heads-up hand to the two fastest
- * clickers - and because a seat that misses a hand then waits for the big
- * blind, the other five join back one per hand rather than all at once. The
- * table spends its first ten minutes watching two people play.
+ * camera, say hello, and press Play in whatever order they get to it. Dealing
+ * as soon as two seats are ready starts a heads-up hand between the two
+ * fastest clickers while everyone else is still clicking - and the four people
+ * who then watch a hand they thought they had joined is the worst first
+ * impression this product can make. A poker night starts when the people at
+ * the table are ready, which is a sentence somebody says out loud.
  *
- * So: before a table has dealt anything, wait the long grace unless everyone
- * who is here and able has already said they are ready, in which case there is
- * nothing left to wait for and the normal beat runs. The grace is a backstop
- * for a friend who wandered off, not the usual path.
+ * So there is no timeout here and deliberately so: the table waits for the
+ * room, however long the room takes. The escape hatch is not a deadline, it is
+ * the three ways a seat stops being someone we are waiting on - it drops, it
+ * sits out, or it has no chips - so one friend who wandered off cannot hold
+ * the evening hostage once they close the tab or sit out.
  *
- * Pure: seat facts in, milliseconds out, no clock and no room.
+ * Pure: seat facts in, a yes or a no out, no clock and no room.
  */
 
 /** One seat as the room sees it when a deal becomes possible. */
@@ -36,17 +35,17 @@ export interface DealSeat {
 }
 
 /**
- * Milliseconds to wait before dealing.
+ * Hold the very first deal until every seat that could press Play has.
  *
  * `hasDealt` is the table's whole history: once one hand has been played the
- * roster question is settled and this is a constant.
+ * roster question is settled and this is always false.
  */
-export function dealDelayMs(
+export function holdForTable(
   seats: readonly DealSeat[],
   hasDealt: boolean,
-): number {
-  if (hasDealt) return HAND_START_DELAY_MS;
-  return seats.every(isSettled) ? HAND_START_DELAY_MS : FIRST_HAND_GRACE_MS;
+): boolean {
+  if (hasDealt) return false;
+  return !seats.every(isSettled);
 }
 
 /**
@@ -54,9 +53,9 @@ export function dealDelayMs(
  *
  * A seat nobody is waiting on is one that has said yes, or one that could not
  * say anything useful if it wanted to. Sitting out and being broke are both
- * answers; a closed laptop is not a person about to press Play. Holding the
- * whole table for any of them would hand one absent friend a veto over the
- * evening, which is what the grace deadline is there to prevent.
+ * answers; a closed laptop is not a person about to press Play. Waiting on any
+ * of them would hand one absent friend a veto over the evening, and with no
+ * deadline behind this that veto would be permanent.
  */
 function isSettled(seat: DealSeat): boolean {
   if (seat.ready) return true;

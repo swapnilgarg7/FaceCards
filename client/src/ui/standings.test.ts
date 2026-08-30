@@ -19,7 +19,6 @@ function seat(over: Partial<SeatSnapshot> = {}): SeatSnapshot {
     pendingBuyIn: 0,
     handsPlayed: 0,
     handsWon: 0,
-    owesBlind: false,
     status: SeatStatus.Active,
     cardCount: 2,
     ...over,
@@ -155,7 +154,6 @@ describe("what a seat is doing", () => {
       note({ status: SeatStatus.Waiting, stack: 0, pendingBuyIn: 500 }),
     ).toBe("buying-in");
     expect(note({ sittingOut: true })).toBe("sitting-out");
-    expect(note({ owesBlind: true })).toBe("waiting-for-blind");
   });
 
   it("puts being away ahead of every other reason", () => {

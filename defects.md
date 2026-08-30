@@ -214,53 +214,70 @@ was whatever the promises settled in. A future edit that moves a `pickCaption`
 back inside `shootPerson` would silently desynchronise the table again, and
 nothing would fail.
 
-## 9. FIXED — a seven-handed table dealt cards to two people, then let them in one per hand
+## 9. FIXED — a seven-handed table dealt cards to two people, then let the rest in one per hand
 
 `server/src/rooms/PokerRoom.ts` `considerDealing`, `deal`;
 `server/src/poker/blinds.ts` `nextBlinds`
 
-Two independent bugs that compounded into the worst first impression the
-product can make: seven friends sit down, and four of them watch.
+Two bugs compounding into the worst first impression the product can make:
+seven friends sit down and four of them watch.
 
 **The first deal fired two seconds after the second Play.** `considerDealing`
 scheduled on `HAND_START_DELAY_MS` the moment `MIN_PLAYERS` were eligible.
 Seven people do not press Play simultaneously — they press it across ten or
 fifteen seconds of finding a camera — so the two fastest clickers started a
-heads-up hand and everybody else was dealt out of it. "Enough players" and
-"the table" are the same set for every hand except the first one, and the code
-only knew the first meaning.
+heads-up hand and everybody else was dealt out of it. "Enough players" and "the
+table" are the same set for every hand except the first one, and the code only
+ever knew the first meaning.
 
-**Then the waiting rule stretched from one hand to a whole orbit.** Every seat
-not dealt into a hand was assigned `owesBlind = true`, and `nextBlinds` admits
-exactly one waiter per hand: the seat the big blind happens to land on. So the
-five who missed hand 1 joined back at one per hand — six hands before the last
-one saw a card. The rule is real casino procedure and it is there for a real
-reason, but it is a rule about *being away*, and it was being charged to people
-who were sitting in their chairs, ready, connected, funded, watching a hand
-they had asked to be in. Being held out by a debt was itself re-incurring the
-debt.
+**Then waiting for the big blind stretched from one hand to a whole orbit.**
+Every seat not dealt into a hand was marked `owesBlind`, and `nextBlinds` can
+only admit one waiter per hand: the seat the big blind happens to land on. So
+the five who missed hand 1 rejoined at one per hand. The same rule met anyone
+who rebought after busting: bust, buy back in, and sit out two more hands before
+the blind came round.
 
 Neither half shows up in a two-player test, which is why both survived.
 
-**Fixed.**
+**Fixed**, in three parts.
 
-- `server/src/rooms/firstDeal.ts` (`dealDelayMs`, pure, unit-tested) holds the
-  table's *first* deal for `FIRST_HAND_GRACE_MS` (20s) unless every seat that
-  could press Play already has, in which case the normal two-second beat runs.
-  Pressing Play only ever shortens that countdown, never restarts it, or the
-  last friend to click would be the one who delayed the deal. Every hand after
-  the first is untouched, and a pending payout timer is left strictly alone so
-  that sitting in during the results screen cannot cut it short.
-- `seatsOwingBlind` in `blinds.ts` charges the wait for absence only: not dealt
-  in **and** not eligible. A seat held out by the arrangement clears its debt
-  and is dealt in on the very next hand, so the wait is bounded at one hand
-  instead of one orbit. A dropped player is still charged — that reversal is
-  argued at the call site and is unchanged.
-- `client/src/ui/startGate.ts` keeps the gate up while the table is still
-  waiting on someone, naming them. With a twenty-second grace, a player who is
-  ready early would otherwise stare at empty felt with nothing saying why. It
-  only names seats that could actually press Play, matching the server's rule,
-  so the table is never shown waiting on a closed laptop.
+- **The table waits for the room.** `server/src/rooms/firstDeal.ts`
+  (`holdForTable`, pure, unit-tested) holds the *first* deal until every seat
+  that could press Play has. Deliberately **no timeout**: a poker night starts
+  when the people at the table say they are ready. The escape hatch is not a
+  deadline but the three ways a seat stops being someone we are waiting on — it
+  drops, it sits out, or it has no chips — so one friend who wandered off cannot
+  hold the evening hostage once they close the tab. Because leaving the question
+  now settles it, `onDrop`, `onLeave` and sit-out all re-run `considerDealing`;
+  without that the table would wait forever on a chair nobody is in.
+
+- **Nobody waits for the big blind.** The rule is gone end to end: out of
+  `BlindSeat`, out of `nextBlinds`, out of the room, out of the `Player` schema
+  and out of the standings note that rendered it. Casino procedure holds a
+  mid-orbit joiner until the blind reaches them so that nobody can step in past
+  the blinds, play the cheapest seat and step out before paying — a rule that
+  protects a game against strangers. This is six friends on a video call. The
+  move it prevents is not one anybody makes, and its cost was up to six hands of
+  watching. Anyone ready, connected and holding chips when the deal comes round
+  is dealt in, every time, and `eligiblePlayers` is now the only place that
+  decision lives. The consequence is that seats appear mid-rotation as a matter
+  of course, which is exactly what the button assertion in `nextBlinds` already
+  existed to survive.
+
+- **The way back in is where losing happens.** A busted seat is not one the next
+  hand waits for, so the table deals on — and the route back was a leaderboard
+  panel the player had to go and open. That is the shape of somebody quietly
+  leaving a poker night. `client/src/ui/rebuy.ts` (pure, unit-tested) decides
+  the offer and `ShowdownOverlay` renders it on the results screen beside Next
+  round: three one-press amounts (minimum, the stack everyone started on, the
+  maximum), or a confirmation once they have bought. It is never a wall — the
+  table is not held up for the decision, and Next round keeps its position so
+  the muscle memory of a player who is not busted never moves.
+
+**Known cost, accepted:** the first deal has no deadline, so a lobby containing
+one connected player who never presses Play and never sits out will not start.
+That is the stated requirement — "it should not start unless all the players are
+ready" — and every other way a seat can go quiet already releases the table.
 
 ## Not defects, recorded so they are not re-litigated
 

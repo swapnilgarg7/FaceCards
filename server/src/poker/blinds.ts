@@ -27,11 +27,21 @@
  *    **dead button**. Moving it onto a live seat instead is the classic bug,
  *    because it drags the whole blind sequence with it and someone pays twice.
  *
- * On top of those, one rule about joining: a player who takes a seat at a
- * table already in play, comes back from sitting out, or rebuys after busting
- * **waits for the big blind**. Until it reaches them they are not dealt in.
- * Without it, a seat can step in one place past the blinds, play the cheapest
- * position at the table, and step out again before paying anything.
+ * There is deliberately **no waiting for the big blind**. Casino procedure
+ * holds a player who joins mid-orbit, returns from sitting out, or rebuys after
+ * busting out of the game until the big blind reaches them, so that nobody can
+ * step in one place past the blinds, play the cheapest seat at the table, and
+ * step out again before paying. That rule protects a game against strangers.
+ * This is six friends on a video call, where the move it prevents is not one
+ * anybody makes, and its cost is enormous: `nextBlinds` can only admit one
+ * waiter per hand - the seat the blind happens to land on - so at a
+ * seven-handed table, rebuying meant watching your friends play up to six more
+ * hands before you saw a card. Anyone ready, connected and holding chips when
+ * the deal comes round is dealt in, every time. That decision lives in one
+ * place, the room's `eligiblePlayers`, and arrives here as `ready`.
+ *
+ * The consequence is that seats appear mid-rotation as a matter of course,
+ * which is exactly what the button assertion further down exists to survive.
  *
  * Pure, like everything else in this directory: seat numbers in, seat numbers
  * out, no clock and no I/O.
@@ -46,16 +56,14 @@ export interface BlindSeat {
    * cares that it is a yes or a no.
    */
   ready: boolean;
-  /**
-   * Must wait for the big blind before being dealt in. Ignored on the first
-   * hand a table ever plays, where nobody has missed anything yet.
-   */
-  owesBlind: boolean;
 }
 
 /** Where the button and the blinds sit for one hand. */
 export interface BlindPositions {
-  /** Seats dealt into this hand, ascending. Always at least two. */
+  /**
+   * Seats dealt into this hand, ascending. Always at least two, and always
+   * every ready seat - see the note above about not waiting for the blind.
+   */
   dealt: number[];
   /**
    * The button. **May not be in `dealt`**: a dead button is a legal, ordinary
@@ -124,14 +132,9 @@ export function nextBlinds(
   // precisely how waiting for the big blind ends.
   const bigBlindSeat = firstAfter(readySeats, previous.bigBlindSeat)!;
 
-  let dealt = ready
-    .filter((s) => !s.owesBlind || s.seat === bigBlindSeat)
-    .map((s) => s.seat);
-
-  // The waiting rule is a rule about fairness between players, not a reason to
-  // stop the game: if honouring it would leave too few seats to play, everyone
-  // ready is dealt in and the blinds fall where they fall.
-  if (dealt.length < 2) dealt = readySeats;
+  // Everybody ready plays. The whole of "who is in this hand" is `ready`, and
+  // it is answered one call up by the room.
+  const dealt = readySeats;
 
   if (dealt.length === 2) {
     // Heads-up inverts everything: the button posts the small blind, so there
@@ -171,8 +174,8 @@ export function nextBlinds(
   // fold-heavy hand - which is exactly why it needs an assertion rather than
   // an eyeball.
   //
-  // Reachable two ways: the waiter fallback above, and any seat that is dealt
-  // back in mid-rotation without waiting for the blind.
+  // Reachable whenever a seat rejoins mid-rotation which, with no waiting
+  // rule, is every rebuy, every sit-in and every friend who arrives late.
   let button = previous.smallBlindPos;
   // With a dead small blind the first live seat clockwise of the button is the
   // big blind instead; the position it is measured against is the same either
@@ -217,43 +220,3 @@ function arrange(
   };
 }
 
-/**
- * Who owes a blind once a hand has been arranged.
- *
- * The waiting rule at the top of this file exists to stop one specific move:
- * stepping in one place past the blinds, playing the cheapest seat at the
- * table, and stepping out again before paying. That move requires *being
- * away*. It is not something a player can do by sitting in their chair,
- * connected, with chips, ready, watching a hand they asked to be in.
- *
- * So the debt is charged for absence, never for exclusion:
- *
- *  - **Not dealt in and not eligible** - sitting out, dropped, or broke when
- *    the deal came round. A blind went past an empty chair. They wait for it.
- *  - **Not dealt in but eligible** - the arrangement above held them out, and
- *    the only reason it can is a debt they were already carrying. Charging
- *    them again for the hand that debt cost them is what turns "wait for the
- *    big blind" into "wait for the big blind to walk the whole ring", because
- *    `nextBlinds` admits exactly one waiter per hand: the seat the big blind
- *    landed on. At a seven-handed table that is six hands of watching your
- *    friends play, which is the opposite of the product.
- *
- * The debt therefore always clears in one hand, and a seat waits at most one
- * hand to join a table already in play. What it buys is unchanged: nobody
- * steps into a running hand for free the instant they arrive.
- */
-export function seatsOwingBlind(
-  seats: readonly number[],
-  eligible: readonly number[],
-  dealt: readonly number[],
-): Set<number> {
-  const wasEligible = new Set(eligible);
-  const wasDealt = new Set(dealt);
-  const owing = new Set<number>();
-  for (const seat of seats) {
-    if (wasDealt.has(seat)) continue;
-    if (wasEligible.has(seat)) continue;
-    owing.add(seat);
-  }
-  return owing;
-}

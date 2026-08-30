@@ -1955,6 +1955,38 @@ h2 {
   font-size: 0.82rem;
 }
 
+/* The way back into the game, on the screen where players leave it.
+
+   Set apart from the foot with a rule and its own ground, because it is a
+   different question from "shall we deal the next one" and reading it as part
+   of that row is how somebody presses Next round while meaning to buy in. It
+   sits above the foot rather than beside it: Next round keeps its place, so
+   the muscle memory of a player who is not busted never moves. */
+.showdown__rebuy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.9rem;
+  padding: 0.8rem 1rem 0;
+  border-top: 1px solid var(--line);
+}
+.showdown__rebuy-lede {
+  margin: 0;
+  color: var(--dim);
+  font-size: 0.86rem;
+}
+.showdown__rebuy-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+}
+.showdown__rebuy-amount {
+  padding: 0.55rem 1rem;
+  font-size: 0.92rem;
+}
+
 .showdown__foot {
   display: flex;
   flex-direction: column;

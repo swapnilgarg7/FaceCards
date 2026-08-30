@@ -61,7 +61,6 @@ export interface SeatSnapshot {
   handsPlayed: number;
   handsWon: number;
   /** Dealt out until the big blind reaches this seat. */
-  owesBlind: boolean;
   status: SeatStatusValue;
   /** Face-down cards in front of this seat. */
   cardCount: number;
@@ -227,7 +226,6 @@ function snapshotOf(room: PokerRoom): RoomSnapshot | null {
       pendingBuyIn: player.pendingBuyIn,
       handsPlayed: player.handsPlayed,
       handsWon: player.handsWon,
-      owesBlind: player.owesBlind,
       status: player.status as SeatStatusValue,
       cardCount: player.cardCount,
       ...(cards.length > 0 ? { holeCards: cards } : {}),

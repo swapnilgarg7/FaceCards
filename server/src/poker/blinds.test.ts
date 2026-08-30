@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   nextBlinds,
-  seatsOwingBlind,
   type BlindPositions,
   type BlindSeat,
 } from "./blinds.js";
@@ -14,7 +13,6 @@ function table(
   return seats.map((seat) => ({
     seat,
     ready: true,
-    owesBlind: false,
     ...overrides[seat],
   }));
 }
@@ -73,19 +71,11 @@ describe("the first hand a table plays", () => {
     expect(first.bigBlindSeat).toBe(5);
   });
 
-  it("owes nobody anything, because nobody has missed a blind yet", () => {
-    // Everyone at a fresh table is nominally "new". Applying the waiting rule
-    // here would deal a table of four into a hand of one.
-    const first = deal(
-      table([0, 1, 2, 3], {
-        0: { owesBlind: true },
-        1: { owesBlind: true },
-        2: { owesBlind: true },
-        3: { owesBlind: true },
-      }),
-      null,
-    );
-    expect(first.dealt).toEqual([0, 1, 2, 3]);
+  it("deals in everyone who is ready, however many that is", () => {
+    expect(deal(table([0, 1, 2, 3]), null).dealt).toEqual([0, 1, 2, 3]);
+    expect(deal(table([0, 1, 2, 3, 4, 5, 6]), null).dealt).toEqual([
+      0, 1, 2, 3, 4, 5, 6,
+    ]);
   });
 
   it("refuses to arrange a hand for fewer than two ready seats", () => {
@@ -202,61 +192,39 @@ describe("a player leaving between hands", () => {
   });
 });
 
-describe("waiting for the big blind", () => {
-  it("holds a returning seat out until the blind reaches it", () => {
-    // 0 1 2 3 running; seat 3 has just rebought and owes a blind.
-    const running = table([0, 1, 2, 3]);
-    let hand = deal(running, null); // button 0, SB 1, BB 2
-    const withWaiter = table([0, 1, 2, 3], { 3: { owesBlind: true } });
-
-    hand = deal(withWaiter, hand); // BB moves to 3 - which is the waiter
-    expect(hand.bigBlindSeat).toBe(3);
-    expect(hand.dealt).toContain(3);
-  });
-
-  it("deals the waiter out while the blind is still coming round", () => {
-    // Seat 1 owes a blind. Hand one put the big blind on seat 2, so the next
-    // one puts it on 3 and the one after on 0: seat 1 sits out both.
-    const seats = table([0, 1, 2, 3], { 1: { owesBlind: true } });
+describe("nobody waits for the big blind", () => {
+  it("deals a rebought seat into the very next hand", () => {
+    // The reported bug: bust, buy back in, and sit out two more hands before
+    // the blind came round to you. Seat 3 is ready again and plays at once.
     let hand = deal(table([0, 1, 2, 3]), null);
-    expect(hand.bigBlindSeat).toBe(2);
+    const withoutThree = deal(table([0, 1, 2]), hand);
+    expect(withoutThree.dealt).toEqual([0, 1, 2]);
 
-    hand = deal(seats, hand);
-    expect(hand.bigBlindSeat).toBe(3);
-    expect(hand.dealt).toEqual([0, 2, 3]);
-
-    hand = deal(seats, hand);
-    expect(hand.bigBlindSeat).toBe(0);
-    expect(hand.dealt).toEqual([0, 2, 3]);
-
-    // Now it is seat 1's turn to pay, and they are back in.
-    hand = deal(seats, hand);
-    expect(hand.bigBlindSeat).toBe(1);
+    hand = deal(table([0, 1, 2, 3]), withoutThree);
     expect(hand.dealt).toEqual([0, 1, 2, 3]);
   });
 
-  it("deals waiters in rather than stopping the game for them", () => {
-    // Two players left, and both of them owe a blind. The fairness rule loses
-    // to the rule that the table keeps playing.
-    const first = deal(table([0, 1, 2]), null);
-    const stalled = deal(
-      table([0, 1], { 0: { owesBlind: true }, 1: { owesBlind: true } }),
-      first,
-    );
-    expect(stalled.dealt).toEqual([0, 1]);
+  it("deals a seat back in the hand after it sits in, at any table size", () => {
+    let hand = deal(table([0, 1, 2, 3, 4, 5, 6]), null);
+    hand = deal(table([0, 1, 2, 4, 5, 6]), hand);
+    expect(hand.dealt).not.toContain(3);
+
+    hand = deal(table([0, 1, 2, 3, 4, 5, 6]), hand);
+    expect(hand.dealt).toEqual([0, 1, 2, 3, 4, 5, 6]);
   });
 
-  it("never lets a waiting seat be skipped over by the blind", () => {
-    // The blind advances one *ready* seat at a time, waiters included, which
-    // is the only reason waiting ever ends.
-    const seats = table([0, 1, 2, 3], { 2: { owesBlind: true } });
+  it("still moves the big blind exactly one ready seat per hand", () => {
+    // Dropping the waiting rule must not touch the anchor. A seat rejoining
+    // cannot pull the blind backwards onto someone who just paid it.
     let hand = deal(table([0, 1, 2, 3]), null);
-    const seen: number[] = [];
-    for (let i = 0; i < 8; i++) {
-      hand = deal(seats, hand);
+    const seen = [hand.bigBlindSeat];
+    for (const roster of [[0, 1, 2, 3], [0, 1, 2], [0, 1, 2, 3], [0, 1, 2, 3]]) {
+      hand = deal(table(roster), hand);
       seen.push(hand.bigBlindSeat);
     }
-    expect(seen).toContain(2);
+    for (let i = 1; i < seen.length; i++) {
+      expect(seen[i]).not.toBe(seen[i - 1]);
+    }
   });
 });
 
@@ -287,13 +255,13 @@ describe("invariants that must hold for any roster churn", () => {
       table([0, 1, 2, 3, 4]),
       table([0, 1, 2, 3, 4]),
       table([0, 2, 3, 4]),
-      table([0, 2, 4], { 4: { owesBlind: true } }),
-      table([0, 2, 4, 5], { 5: { owesBlind: true } }),
+      table([0, 2, 4]),
+      table([0, 2, 4, 5]),
       table([2, 4, 5]),
       table([2, 5]),
-      table([1, 2, 5], { 1: { owesBlind: true } }),
       table([1, 2, 5]),
-      table([1, 2, 3, 5], { 3: { owesBlind: true } }),
+      table([1, 2, 5]),
+      table([1, 2, 3, 5]),
     ];
 
     let hand: BlindPositions | null = null;
@@ -345,7 +313,7 @@ describe("hostile churn, fuzzed", () => {
       const roster: BlindSeat[] = [];
       for (let seat = 0; seat < 6; seat++) {
         if (rand(4) === 0) continue;
-        roster.push({ seat, ready: true, owesBlind: rand(3) === 0 });
+        roster.push({ seat, ready: true });
       }
 
       const next = nextBlinds(roster, hand);
@@ -400,37 +368,3 @@ describe("hostile churn, fuzzed", () => {
   });
 });
 
-describe("who owes a blind after a hand is arranged", () => {
-  it("charges a seat that was away when the deal came round", () => {
-    // Seat 3 sat out, so it was never eligible: a blind went past an empty
-    // chair and it waits for the next one.
-    expect(seatsOwingBlind([0, 1, 2, 3], [0, 1, 2], [0, 1, 2])).toEqual(
-      new Set([3]),
-    );
-  });
-
-  it("does not charge a seat that was ready and held out by the wait", () => {
-    // Seat 3 is ready, connected and funded; `nextBlinds` held it out because
-    // it already owed a blind. Charging it again is the bug that made the wait
-    // last a whole orbit instead of one hand.
-    expect(seatsOwingBlind([0, 1, 2, 3], [0, 1, 2, 3], [0, 1, 2])).toEqual(
-      new Set(),
-    );
-  });
-
-  it("never charges a seat that was dealt in", () => {
-    expect(seatsOwingBlind([0, 1, 2], [0, 1, 2], [0, 1, 2])).toEqual(new Set());
-  });
-
-  it("clears the whole waiting room in one hand at a seven-handed table", () => {
-    // The reported failure: two seats started the evening, five more were
-    // ready and watching. All five were eligible, one was let in by the big
-    // blind, and the other four must not be sent to the back of the queue.
-    const seats = [0, 1, 2, 3, 4, 5, 6];
-    expect(seatsOwingBlind(seats, seats, [0, 1, 2])).toEqual(new Set());
-  });
-
-  it("keeps charging a dropped seat, reconnection window or not", () => {
-    expect(seatsOwingBlind([0, 1, 2], [0, 1], [0, 1])).toEqual(new Set([2]));
-  });
-});

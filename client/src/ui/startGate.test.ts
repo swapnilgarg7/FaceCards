@@ -19,7 +19,6 @@ function seat(over: Partial<SeatSnapshot> = {}): SeatSnapshot {
     pendingBuyIn: 0,
     handsPlayed: 0,
     handsWon: 0,
-    owesBlind: false,
     status: SeatStatus.Waiting,
     cardCount: 0,
     ...over,

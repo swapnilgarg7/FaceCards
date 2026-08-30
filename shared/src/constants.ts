@@ -145,20 +145,3 @@ export const TURN_TIMEOUT_MS = 30_000;
  */
 export const DISCONNECTED_TURN_TIMEOUT_MS = 5_000;
 
-/**
- * How long the very *first* deal of the evening waits for the rest of the room.
- *
- * Two browsers finishing their handshake first is not a table being ready.
- * Seven friends press Play across maybe ten seconds of "hold on, my camera" -
- * and under the flat `HAND_START_DELAY_MS` fuse the two fastest clickers start
- * a heads-up hand that everybody else then has to sit out. So before a table
- * has dealt anything, the fuse is long and pressing Play is what shortens it:
- * the moment everyone present and able has said they are ready, the normal
- * two-second beat runs instead and the cards come out.
- *
- * Twenty seconds because it is only ever spent when somebody at the table has
- * *not* pressed Play - an away friend or a closed lid - and it is the whole
- * cost of that person never pressing it. Long enough to cross a room, short
- * enough that the table is not left staring at felt wondering if it is broken.
- */
-export const FIRST_HAND_GRACE_MS = 20_000;
